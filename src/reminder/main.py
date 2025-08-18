@@ -26,7 +26,7 @@ def handle_message(event: MessageEvent):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
-            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=str(event.source.userId))])
+            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=str(event.source.user_id))])
         )
 
 
