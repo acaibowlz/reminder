@@ -1,4 +1,5 @@
 import logging
+import sys
 
 from fastapi import FastAPI, HTTPException, Request
 from linebot.v3 import WebhookHandler
@@ -9,6 +10,9 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from .config import settings
 
 logger = logging.getLogger(__name__)
+stream_handler = logging.StreamHandler(stream=sys.stdout)
+stream_handler.setLevel(logging.INFO)
+logger.addHandler(stream_handler)
 
 app = FastAPI()
 
