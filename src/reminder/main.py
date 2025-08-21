@@ -1,33 +1,23 @@
 import logging
-import sys
 
+import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.messaging import Configuration
 
-from .config import const
+from reminder.const import DATABASE_URL, LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
+from reminder.db import init_db
 
 logger = logging.getLogger(__name__)
-stream_handler = logging.StreamHandler(stream=sys.stdout)
-stream_handler.setLevel(logging.INFO)
-formatter = logging.Formatter(fmt="%(levelname)s: %(message)s")
-logger.addHandler(stream_handler)
+
+with psycopg.connect(conninfo=DATABASE_URL) as conn:
+    init_db(conn)
 
 app = FastAPI()
 
-configuration = Configuration(access_token=const.LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(const.LINE_CHANNEL_SECRET)
-
-
-@handler.add(MessageEvent, message=TextMessageContent)
-def handle_message(event: MessageEvent):
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message_with_http_info(
-            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=str(event.source.user_id))])
-        )
+configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 
 @app.post("/webhook")
