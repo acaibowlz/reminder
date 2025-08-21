@@ -27,7 +27,7 @@ def handle_added_as_friend(event: FollowEvent) -> None:
         add_user(conn, user_id=event.source.user_id)
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message_with_http_info(
+        line_bot_api.reply_message(
             ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="hello my new friend!")])
         )
 
@@ -36,7 +36,7 @@ def handle_added_as_friend(event: FollowEvent) -> None:
 def handle_message(event: MessageEvent) -> None:
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message_with_http_info(
+        line_bot_api.reply_message(
             ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=str(event.message.text))])
         )
 

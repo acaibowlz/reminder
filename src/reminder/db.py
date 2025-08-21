@@ -1,5 +1,9 @@
+import logging
+
 import psycopg
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 def init_db(conn: psycopg.Connection) -> None:
@@ -87,5 +91,6 @@ def add_user(user_id: str, conn: psycopg.Connection):
             (user_id, display_name, picture_url, 0, False, None),
         )
     conn.commit()
+    logger.info(f"New user {display_name}")
 
     return user_id
