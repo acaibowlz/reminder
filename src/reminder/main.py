@@ -4,11 +4,11 @@ import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration
+from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, ReplyMessageRequest, TextMessage
+from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent
 
-import reminder.event_handlers
 from reminder.const import DATABASE_URL, LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
-from reminder.db import init_db
+from reminder.db import add_user, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,26 @@ app = FastAPI()
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+
+@handler.add(FollowEvent)
+def handle_added_as_friend(event: FollowEvent) -> None:
+    with psycopg.connect(conninfo=DATABASE_URL) as conn:
+        add_user(conn, user_id=event.source.user_id)
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message_with_http_info(
+            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="hello my new friend!")])
+        )
+
+
+@handler.add(MessageEvent, message=TextMessageContent)
+def handle_message(event: MessageEvent) -> None:
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message_with_http_info(
+            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=str(event.message.text))])
+        )
 
 
 @app.post("/webhook")
