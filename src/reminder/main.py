@@ -23,6 +23,8 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 @handler.add(FollowEvent)
 def handle_added_as_friend(event: FollowEvent) -> None:
+    print(event.source.user_id)
+
     with psycopg.connect(conninfo=DATABASE_URL) as conn:
         add_user(conn, user_id=event.source.user_id)
     with ApiClient(configuration) as api_client:
