@@ -10,8 +10,6 @@ from reminder.handler import handler
 from reminder.logging import LOGGING_CONFIG
 
 logging.config.dictConfig(LOGGING_CONFIG)
-uvicorn_access = logging.getLogger("uvicorn.access")
-uvicorn_access.disabled = True
 logger = logging.getLogger(__name__)
 
 with psycopg.connect(conninfo=DATABASE_URL) as conn:
