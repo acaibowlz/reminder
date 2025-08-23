@@ -85,8 +85,13 @@ def add_user(user_id: str, display_name: str, picture_url: str, conn: psycopg.Co
             """,
             (user_id, display_name, picture_url, 0, False, None),
         )
+    logger.info(f"User inserted: {user_id}")
 
 
 def delete_user(user_id: str, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM users WHERE user_id = %s;", (user_id))
+        cur.execute("DELETE FROM users WHERE user_id = %s;", (user_id,))
+        if cur.rowcount > 0:
+            logger.info(f"User deleted: {user_id}")
+        else:
+            logger.info(f"No user found on deletion: {user_id}")

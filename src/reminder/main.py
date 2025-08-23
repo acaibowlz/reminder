@@ -37,7 +37,7 @@ async def webhook(request: Request):
             detail="Invalid signature. Please check your channel secret and access token.",
         )
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {str(e)}")
+        logger.error(str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal Server Error")
 
     return "OK"

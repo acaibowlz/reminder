@@ -18,7 +18,8 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 @handler.add(FollowEvent)
 def handle_follow_event(event: FollowEvent) -> None:
     user_id = event.source.user_id
-    user_info = requests.get(f"https://api.line.me/v2/bot/profile/{user_id}")
+    resp = requests.get(f"https://api.line.me/v2/bot/profile/{user_id}")
+    user_info = resp.json()
     display_name = user_info.get("displayName")
     picture_url = user_info.get("pictureUrl")
 
@@ -44,7 +45,7 @@ def handle_unfollow_event(event: UnfollowEvent) -> None:
 
 
 def get_reply_message(msg: str, user_id: str):
-    pass
+    return "abcd"
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
