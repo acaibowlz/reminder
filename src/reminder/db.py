@@ -74,14 +74,9 @@ def init_db(conn: psycopg.Connection) -> None:
             )
             """
         )
-        conn.commit()
 
 
-def add_user(user_id: str, conn: psycopg.Connection):
-    user_info = requests.get(f"https://api.line.me/v2/bot/profile/{user_id}")
-    display_name = user_info.get("displayName")
-    picture_url = user_info.get("pictureUrl")
-
+def add_user(user_id: str, display_name: str, picture_url: str, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -90,7 +85,8 @@ def add_user(user_id: str, conn: psycopg.Connection):
             """,
             (user_id, display_name, picture_url, 0, False, None),
         )
-    conn.commit()
-    logger.info(f"New user {display_name}")
 
-    return user_id
+
+def delete_user(user_id: str, conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM users WHERE user_id = %s;", (user_id))

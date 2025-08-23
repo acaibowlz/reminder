@@ -1,6 +1,3 @@
-import logging
-import logging.config
-
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -20,5 +17,3 @@ LOGGING_CONFIG = {
         "level": "INFO",
     },
 }
-
-logging.config.dictConfig(LOGGING_CONFIG)
