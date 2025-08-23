@@ -1,27 +1,14 @@
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {
-        "standard": {"format": "[%(levelname)s] %(name)s: %(message)s"},
-        "uvicorn": {
-            "()": "uvicorn.logging.DefaultFormatter",
-            "fmt": "%(levelprefix)s %(message)s",
-            "use_colors": None,
-        },
-    },
+    "formatters": {"standard": {"format": "[%(levelname)s] %(name)s: %(message)s"}},
     "handlers": {
         "stream": {
             "class": "logging.StreamHandler",
             "formatter": "standard",
             "level": "INFO",
             "stream": "ext://sys.stdout",
-        },
-        "uvicorn": {
-            "class": "logging.StreamHandler",
-            "formatter": "uvicorn",
-            "level": "INFO",
-            "stream": "ext://sys.stdout",
-        },
+        }
     },
     "root": {
         "handlers": ["stream"],
@@ -29,7 +16,7 @@ LOGGING_CONFIG = {
     },
     "loggers": {
         "uvicorn.error": {
-            "handlers": ["uvicorn"],
+            "handlers": ["stream"],
             "level": "INFO",
             "propagate": False,
         },
