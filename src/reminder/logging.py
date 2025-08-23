@@ -1,7 +1,7 @@
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {"standard": {"format": "[%(levelname)s] %(name)s: %(message)s"}},
+    "formatters": {"standard": {"format": "[%(levelname)s] %(name)s - %(message)s"}},
     "handlers": {
         "stream": {
             "class": "logging.StreamHandler",
