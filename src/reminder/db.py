@@ -1,6 +1,7 @@
 import logging
 
 import psycopg
+from psycopg.types.json import Json
 
 from reminder.const import DATABASE_URL
 from reminder.models import ChatData, EventData
@@ -135,7 +136,13 @@ def add_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
             INSERT INTO chats (chat_id, user_id, chat_type, current_state, state_data)
             VALUES (%s, %s, %s, %s, %s)
             """,
-            (chat_data.chat_id, chat_data.user_id, chat_data.chat_type, chat_data.current_state, chat_data.state_data),
+            (
+                chat_data.chat_id,
+                chat_data.user_id,
+                chat_data.chat_type,
+                chat_data.current_state,
+                Json(chat_data.state_data),
+            ),
         )
     conn.commit()
     logger.info(f"Chat inserted: {chat_data.chat_id}")
@@ -151,7 +158,7 @@ def update_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
                 is_completed  = %s,
             WHERE chat_id     = %s
             """,
-            (chat_data.current_state, chat_data.state_data, chat_data.is_completed, chat_data.chat_id),
+            (chat_data.current_state, Json(chat_data.state_data), chat_data.is_completed, chat_data.chat_id),
         )
     conn.commit()
     logger.info(f"Chat updated: {chat_data.chat_id}")
