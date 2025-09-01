@@ -36,4 +36,4 @@ class ChatData:
     chat_type: str
     current_state: int
     state_data: dict
-    is_completed: bool
+    is_completed: bool = False
