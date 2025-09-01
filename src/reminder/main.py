@@ -2,6 +2,7 @@ import logging
 
 import psycopg
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import Response
 from linebot.v3.exceptions import InvalidSignatureError
 
 from reminder.const import DATABASE_URL
@@ -40,4 +41,4 @@ async def webhook(request: Request):
         logger.error(str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal Server Error")
 
-    return "OK"
+    return Response(status_code=status.HTTP_200_OK)
