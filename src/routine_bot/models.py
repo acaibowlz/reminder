@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
@@ -34,6 +34,7 @@ class ChatData:
     chat_id: str
     user_id: str
     chat_type: str
-    current_state: int
-    state_data: dict
+    current_step: Optional[str]
+    next_step: Optional[str]
+    state_data: dict = field(default_factory=dict)
     is_completed: bool = False

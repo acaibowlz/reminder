@@ -3,8 +3,8 @@ import logging
 import psycopg
 from psycopg.types.json import Json
 
-from reminder.const import DATABASE_URL
-from reminder.models import ChatData, EventData
+from routine_bot.const import DATABASE_URL
+from routine_bot.models import ChatData, EventData
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,8 @@ def init_db(conn: psycopg.Connection) -> None:
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 user_id TEXT NOT NULL REFERENCES users(user_id),
                 chat_type TEXT NOT NULL,
-                current_state INTEGER NOT NULL,
+                current_step TEXT NOT NULL,
+                next_step TEXT NOT NULL,
                 state_data JSON,
                 is_completed BOOLEAN NOT NULL DEFAULT FALSE
             )
@@ -83,8 +84,10 @@ def init_db(conn: psycopg.Connection) -> None:
             """
         )
     conn.commit()
+    logger.info("Database initialized")
 
 
+### User Table ###
 def add_user(user_id: str, display_name: str, picture_url: str, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -98,15 +101,7 @@ def add_user(user_id: str, display_name: str, picture_url: str, conn: psycopg.Co
     logger.info(f"User inserted: {user_id}")
 
 
-def get_event_id(user_id: str, event_name: str, conn: psycopg.Connection) -> str | None:
-    with conn.cursor() as cur:
-        cur.execute("SELECT event_id FROM events WHERE user_id = %s AND event_name = %s", (user_id, event_name))
-        result = cur.fetchone()
-        if result is None:
-            return None
-        return result[0]
-
-
+### Event Table ###
 def add_event(event_data: EventData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -129,18 +124,33 @@ def add_event(event_data: EventData, conn: psycopg.Connection) -> None:
     logger.info(f"Event inserted: {event_data.event_id}")
 
 
+def get_event_id(user_id: str, event_name: str, conn: psycopg.Connection) -> str | None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT event_id FROM events WHERE user_id = %s AND event_name = %s", (user_id, event_name))
+        result = cur.fetchone()
+        if result is None:
+            return None
+        return result[0]
+
+
+def update_event():
+    pass
+
+
+### Chat Table ###
 def add_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO chats (chat_id, user_id, chat_type, current_state, state_data)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO chats (chat_id, user_id, chat_type, current_step, next_step, state_data)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 chat_data.chat_id,
                 chat_data.user_id,
                 chat_data.chat_type,
-                chat_data.current_state,
+                chat_data.current_step,
+                chat_data.next_step,
                 Json(chat_data.state_data),
             ),
         )
@@ -153,12 +163,19 @@ def update_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
         cur.execute(
             """
             UPDATE chats
-            SET current_state = %s,
-                state_data    = %s,
-                is_completed  = %s,
-            WHERE chat_id     = %s
+            SET current_step = %s,
+                next_step    = %s,
+                state_data   = %s,
+                is_completed = %s,
+            WHERE chat_id    = %s
             """,
-            (chat_data.current_state, Json(chat_data.state_data), chat_data.is_completed, chat_data.chat_id),
+            (
+                chat_data.current_step,
+                chat_data.next_step,
+                Json(chat_data.state_data),
+                chat_data.is_completed,
+                chat_data.chat_id,
+            ),
         )
     conn.commit()
     logger.info(f"Chat updated: {chat_data.chat_id}")
@@ -173,11 +190,13 @@ def get_ongoing_chat_id(user_id: str, conn: psycopg.Connection) -> str | None:
         return result[0]
 
 
-def get_ongoing_chat_data(chat_id, conn: psycopg.Connection) -> ChatData:
+def get_ongoing_chat_data(user_id: str, conn: psycopg.Connection) -> ChatData | None:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT chat_id, user_id, chat_type, current_state, state_data, is_completed FROM chats WHERE chat_id = %s",
-            (chat_id,),
+            "SELECT chat_id, user_id, chat_type, current_step, next_step, state_data, is_completed FROM chats WHERE user_id = %s AND is_completed = %s",
+            (user_id, False),
         )
-        row = cur.fetchone()
-        return ChatData(*row)
+        result = cur.fetchone()
+        if result is None:
+            return None
+        return ChatData(*result)

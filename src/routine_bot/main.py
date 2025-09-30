@@ -5,10 +5,9 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import Response
 from linebot.v3.exceptions import InvalidSignatureError
 
-from reminder.const import DATABASE_URL
-from reminder.db import init_db
-from reminder.handler import handler
-from reminder.logging import LOGGING_CONFIG
+from routine_bot.const import DATABASE_URL, LOGGING_CONFIG
+from routine_bot.db import init_db
+from routine_bot.handlers import handler
 
 logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
