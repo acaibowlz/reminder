@@ -20,13 +20,11 @@ class EventData:
     event_id: str
     event_name: str
     user_id: str
-    last_done_at: datetime
-    has_reminder: bool
-    cycle_count: Optional[int] = None
-    cycle_unit: Optional[str] = None
+    last_updated_at: datetime
+    reminder: bool
+    cycle_period: Optional[str] = None
     cycle_ends_at: Optional[datetime] = None
     share_count: int = 0
-    is_active: bool = False
 
 
 @dataclass
@@ -34,7 +32,6 @@ class ChatData:
     chat_id: str
     user_id: str
     chat_type: str
-    current_step: Optional[str]
-    next_step: Optional[str]
-    state_data: dict = field(default_factory=dict)
+    current_state: str
+    payload: dict = field(default_factory=dict)
     is_completed: bool = False

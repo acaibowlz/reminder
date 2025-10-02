@@ -1,19 +1,13 @@
-# STARTING_DATE_EXAMPLE = """➡️ 支援以下格式：
-#
-#     - 昨天
-#     - 明天
-#     - 0827 （4 碼日期，MMDD）
-#     - 20250827 （8 碼日期，YYYYMMDD）
+from typing import Any, Optional
 
-#     ⚠️ 請直接輸入上述其中一種格式
-# """
-STARTING_DATE_EXAMPLE = "\n".join(
+DATE_EXAMPLE = "\n".join(
     (
-        "➡️ 支援以下格式：",
+        "🌟 支援以下格式：",
         "- 今天",
         "- 明天",
-        "- 0827 （4 碼日期，MMDD）",
-        "- 20250827 （8 碼日期，YYYYMMDD）",
+        "- 昨天",
+        "- 0827 （4 碼日期）",
+        "- 20250827 （8 碼日期）",
         "",
         "⚠️ 請直接輸入上述其中一種格式",
     )
@@ -21,10 +15,10 @@ STARTING_DATE_EXAMPLE = "\n".join(
 
 CYCLE_PERIOD_EXAMPLE = "\n".join(
     (
-        "➡️ 支援格式（數字 + 單位）：",
-        "- 3 day   （每 3 天",
-        "- 2 week  （每 2 週",
-        "- 1 month （每 1 個月",
+        "🌟 支援以下格式（數字 + 單位）：",
+        "- 3 day",
+        "- 2 week",
+        "- 1 month",
         "",
         "⚠️ 單位僅支援：day, week, month",
     )
@@ -32,94 +26,98 @@ CYCLE_PERIOD_EXAMPLE = "\n".join(
 
 
 class NewEventMsg:
-    def __init__(self, event_name: str) -> None:
-        self.event_name = event_name
+    def __init__(self, chat_payload: Optional[dict[str, Any]] = None) -> None:
+        self.chat_payload = chat_payload
 
-    @property
-    def prompt_for_starting_date(self) -> str:
+    def prompt_for_event_name(self) -> str:
+        return "🎯 請輸入欲新增的事件名稱（限 20 字元內）"
+
+    def prompt_for_start_date(self) -> str:
         return "\n".join(
             (
-                f"🎯 新事件［{self.event_name}］",
+                f"🎯 新事件［{self.chat_payload['event_name']}］",
                 "",
-                "⏰ 請輸入事件開始日期",
+                "➡️ 請輸入事件起始日期",
                 "",
-                STARTING_DATE_EXAMPLE,
+                DATE_EXAMPLE,
+            )
+        )
+
+    def prompt_for_reminder(self) -> str:
+        return "\n".join(
+            (
+                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                "",
+                f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
+                "",
+                "➡️ 請輸入是否設定提醒（Y / N）",
+            )
+        )
+
+    def prompt_for_cycle_period(self) -> str:
+        return "\n".join(
+            (
+                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                "",
+                f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
+                "",
+                "➡️ 請輸入提醒週期",
+                "",
+                CYCLE_PERIOD_EXAMPLE,
+            )
+        )
+
+    def completion_no_reminder(self):
+        return "\n".join(
+            (
+                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                "",
+                f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
+                "",
+                "⏰ 提醒設定：關閉",
+                "",
+                "✅ 新增完成！",
+            )
+        )
+
+    def completion_with_reminder(self):
+        return "\n".join(
+            (
+                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                "",
+                f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
+                "",
+                f"⏰ 提醒設定：{self.chat_payload['cycle_period']}",
+                "",
+                "✅ 新增完成！",
             )
         )
 
 
-# class NewEventMsg:
-#     @staticmethod
-#     def prompt_for_starting_date(event_name: str) -> str:
-#         return textwrap.dedent(
-#             f"""🎯 新事件［{event_name}］
+class ErrorMsg:
+    @staticmethod
+    def unrecognized_command() -> str:
+        return "指令無法辨識🤣 請再試一次😌"
 
-#             ⏰ 請輸入事件開始日期
+    @staticmethod
+    def unrecognized_date() -> str:
+        return "\n".join(("無法辨識輸入的日期😱", "請再試一次😌", "", DATE_EXAMPLE))
 
-#             {STARTING_DATE_EXAMPLE}
-#             """
-#         )
+    @staticmethod
+    def unrecognized_cycle_period() -> str:
+        pass
 
-#     @staticmethod
-#     def prompt_for_reminder(event_name: str) -> str:
-#         return textwrap.dedent(f"""
-#             🎯 新事件［{event_name}］
+    @staticmethod
+    def unrecognized_reminder_input() -> str:
+        return "\n".join(("無校的輸入😱 請再試一次😌", "", "➡️ 請輸入是否設定提醒（Y / N）"))
 
-#             開始日期設定完成 ✅
+    @staticmethod
+    def event_name_duplicated(event_name: str) -> str:
+        return f"已有叫做［{event_name}］的事件🤣 請換個名稱再試一次😌"
 
-#             請輸入是否設定提醒（Y / N）
-#             """)
-
-#     @staticmethod
-#     def prompt_for_cycle_period(event_name: str) -> str:
-#         return textwrap.dedent(f"""
-#             🎯 新事件［{event_name}］
-
-#             開啟提醒 ✅
-#             ⏰ 請輸入循環週期
-
-#             {CYCLE_PERIOD_EXAMPLE}
-#             """)
-
-#     @staticmethod
-#     def completed(event_name: str) -> str:
-#         return textwrap.dedent(f"""
-#             🎯 新事件［{event_name}］
-
-#             新增完成 ✅
-#             """)
-
-
-# class UpdateEventMsg:
-#     @staticmethod
-#     def prompt_for_last_done_date(event_name: str) -> str:
-#         return textwrap.dedent(f"""
-#             🎯 欲更新事件［{event_name}］
-
-#             ⏰ 請輸入新的完成時間
-
-#             {STARTING_DATE_EXAMPLE}
-#             """)
-
-
-# class EditEventMsg:
-#     @staticmethod
-#     def prompt_for_field_to_edit(event_name: str) -> str:
-#         return textwrap.dedent(f"""
-#             🎯 欲修改事件［{event_name}］
-
-#             ✏ 請輸入想要修改的設定（名稱 / 提醒）
-#             """)
-
-
-# class DeleteEventMsg:
-#     @staticmethod
-#     def prompt_for_delete_comfirmation(event_name: str) -> str:
-#         return textwrap.dedent(f"""
-#             🎯 欲刪除事件［{event_name}］
-
-#             ⚠️ 請確認是否要刪除（Y / N）
-#             """)
+    @staticmethod
+    def event_name_too_long() -> str:
+        return "事件名稱不可以超過 20 字元🤣 請再試一次😌"
 
 
 # class ErrorMsg:
@@ -139,11 +137,11 @@ class NewEventMsg:
 #             return f"事件名稱不能有 {kwargs['invalid_char']} 請再試一次😌"
 
 #     @staticmethod
-#     def invalid_starting_date() -> str:
+#     def invalid_start_date() -> str:
 #         return textwrap.dedent(f"""
 #             無法辨識輸入的日期😱 請再試一次😌
 
-#             {STARTING_DATE_EXAMPLE}
+#             {DATE_EXAMPLE}
 #             """)
 
 #     @staticmethod
