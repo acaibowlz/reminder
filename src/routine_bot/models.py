@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -11,7 +10,7 @@ class UserData:
     profile_refreshed_at: datetime
     event_count: int
     is_premium: bool
-    premium_until: Optional[datetime]
+    premium_until: datetime | None
     is_blocked: bool
 
 
@@ -20,10 +19,10 @@ class EventData:
     event_id: str
     event_name: str
     user_id: str
-    last_updated_at: datetime
+    last_done_at: datetime
     reminder: bool
-    cycle_period: Optional[str] = None
-    cycle_ends_at: Optional[datetime] = None
+    cycle_period: str | None = None
+    cycle_ends_at: datetime | None = None
     share_count: int = 0
 
 
@@ -32,6 +31,6 @@ class ChatData:
     chat_id: str
     user_id: str
     chat_type: str
-    current_state: str
+    current_step: str | None
     payload: dict = field(default_factory=dict)
     is_completed: bool = False

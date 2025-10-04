@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 DATE_EXAMPLE = "\n".join(
     (
@@ -15,18 +15,18 @@ DATE_EXAMPLE = "\n".join(
 
 CYCLE_PERIOD_EXAMPLE = "\n".join(
     (
-        "🌟 支援以下格式（數字 + 單位）：",
+        "🌟 支援以下格式：",
         "- 3 day",
         "- 2 week",
         "- 1 month",
         "",
-        "⚠️ 單位僅支援：day, week, month",
+        "⚠️ 請直接輸入上述其中一種格式",
     )
 )
 
 
 class NewEventMsg:
-    def __init__(self, chat_payload: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, chat_payload: dict[str, Any] | None = None) -> None:
         self.chat_payload = chat_payload
 
     def prompt_for_event_name(self) -> str:
@@ -87,7 +87,7 @@ class NewEventMsg:
                 "",
                 f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
                 "",
-                f"⏰ 提醒設定：{self.chat_payload['cycle_period']}",
+                f"⏰ 提醒週期：{self.chat_payload['cycle_period']}",
                 "",
                 "✅ 新增完成！",
             )
@@ -101,15 +101,15 @@ class ErrorMsg:
 
     @staticmethod
     def unrecognized_date() -> str:
-        return "\n".join(("無法辨識輸入的日期😱", "請再試一次😌", "", DATE_EXAMPLE))
+        return "\n".join(("無效的輸入😱 請再試一次😌", "", DATE_EXAMPLE))
 
     @staticmethod
     def unrecognized_cycle_period() -> str:
-        pass
+        return "\n".join(("無效的輸入😱 請再試一次😌", "", CYCLE_PERIOD_EXAMPLE))
 
     @staticmethod
     def unrecognized_reminder_input() -> str:
-        return "\n".join(("無校的輸入😱 請再試一次😌", "", "➡️ 請輸入是否設定提醒（Y / N）"))
+        return "\n".join(("無效的輸入😱 請再試一次😌", "", "➡️ 請輸入是否設定提醒（Y / N）"))
 
     @staticmethod
     def event_name_duplicated(event_name: str) -> str:
@@ -120,50 +120,7 @@ class ErrorMsg:
         return "事件名稱不可以超過 20 字元🤣 請再試一次😌"
 
 
-# class ErrorMsg:
-#     @staticmethod
-#     def event_name_duplicated(event_name: str) -> str:
-#         return f"已有叫做［{event_name}］的事件🤣 請換個名稱再試一次😌"
-
-#     @staticmethod
-#     def event_not_found(event_name: str) -> str:
-#         return f"沒有找到叫做［{event_name}］的事件😱 請再試一次😌"
-
-#     @staticmethod
-#     def invalid_event_name(**kwargs) -> str:
-#         if kwargs["too_long"]:
-#             return "事件名稱不可以超過20字🤣 請再試一次😌"
-#         elif kwargs["invalid_char"]:
-#             return f"事件名稱不能有 {kwargs['invalid_char']} 請再試一次😌"
-
-#     @staticmethod
-#     def invalid_start_date() -> str:
-#         return textwrap.dedent(f"""
-#             無法辨識輸入的日期😱 請再試一次😌
-
-#             {DATE_EXAMPLE}
-#             """)
-
-#     @staticmethod
-#     def invalid_reminder_confirmation() -> str:
-#         return textwrap.dedent("""
-#             無法辨識輸入的回覆😱 請再試一次😌
-
-#             請輸入是否設定提醒（Y / N）
-#             """)
-
-#     @staticmethod
-#     def invalid_cycle_period() -> str:
-#         return textwrap.dedent(f"""
-#             無法辨識輸入的循環週期😱 請再試一次😌
-
-#             {CYCLE_PERIOD_EXAMPLE}
-#             """)
-
-#     @staticmethod
-#     def unrecognized_command() -> str:
-#         return "指令無法辨識🤣 請再試一次😌"
-
-#     @staticmethod
-#     def unrecognized_message() -> str:
-#         return "訊息無法辨識🤣 請再試一次😌"
+class GreetingMsg:
+    @staticmethod
+    def random() -> str:
+        pass

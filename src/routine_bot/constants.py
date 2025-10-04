@@ -90,4 +90,3 @@ class NewEventState:
     INPUT_START_DATE = "input_start_date"
     INPUT_REMINDER = "input_reminder"
     INPUT_CYCLE_PERIOD = "input_cycle_period"
-    COMPLETE = "complete"

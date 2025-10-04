@@ -1,10 +1,11 @@
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import psycopg
 import requests
+from dateutil.relativedelta import relativedelta
 from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent, UnfollowEvent
@@ -14,8 +15,10 @@ from routine_bot.constants import (
     LINE_CHANNEL_ACCESS_TOKEN,
     LINE_CHANNEL_SECRET,
     SUPPORTED_COMMANDS,
+    SUPPORTED_UNITS,
     ChatType,
     Command,
+    CycleUnit,
     NewEventState,
 )
 from routine_bot.db import (
@@ -96,8 +99,22 @@ def parse_date(msg: str) -> datetime | None:
     return date
 
 
+def parse_cycle_period(msg: str) -> tuple[int, str] | None:
+    try:
+        value, unit = msg.split(" ", maxsplit=1)
+    except ValueError:
+        return None
+    try:
+        value = int(value)
+    except ValueError:
+        return None
+    if unit not in SUPPORTED_UNITS:
+        return None
+    return value, unit
+
+
 def handle_new_event_chat(msg: str, chat_data: ChatData, conn: psycopg.Connection) -> str:
-    if chat_data.current_state == NewEventState.INPUT_NAME:
+    if chat_data.current_step == NewEventState.INPUT_NAME:
         event_name = msg
         # validate event name
         if len(event_name) > 20:
@@ -106,28 +123,28 @@ def handle_new_event_chat(msg: str, chat_data: ChatData, conn: psycopg.Connectio
             return ErrorMsg.event_name_duplicated(event_name)
         # store event name in state data
         chat_data.payload["event_name"] = event_name
-        chat_data.current_state = NewEventState.INPUT_START_DATE
+        chat_data.current_step = NewEventState.INPUT_START_DATE
         update_chat(chat_data, conn)
         return NewEventMsg(chat_data.payload).prompt_for_start_date()
 
-    elif chat_data.current_state == NewEventState.INPUT_START_DATE:
+    elif chat_data.current_step == NewEventState.INPUT_START_DATE:
         start_date = parse_date(msg)
         if start_date is None:
             return ErrorMsg.unrecognized_date()
         chat_data.payload["start_date"] = start_date.isoformat()  # datetime is not JSON serializable
-        chat_data.current_state = NewEventState.INPUT_REMINDER
+        chat_data.current_step = NewEventState.INPUT_REMINDER
         update_chat(chat_data, conn)
         return NewEventMsg(chat_data.payload).prompt_for_reminder()
 
-    elif chat_data.current_state == NewEventState.INPUT_REMINDER:
+    elif chat_data.current_step == NewEventState.INPUT_REMINDER:
         if msg.upper() == "Y":
             chat_data.payload["reminder"] = True
-            chat_data.current_state = NewEventState.INPUT_CYCLE_PERIOD
+            chat_data.current_step = NewEventState.INPUT_CYCLE_PERIOD
             update_chat(chat_data, conn)
             return NewEventMsg(chat_data.payload).prompt_for_cycle_period()
         elif msg.upper() == "N":
             chat_data.payload["reminder"] = False
-            chat_data.current_state = NewEventState.COMPLETE
+            chat_data.current_step = None
             chat_data.is_completed = True
             update_chat(chat_data, conn)
 
@@ -135,13 +152,43 @@ def handle_new_event_chat(msg: str, chat_data: ChatData, conn: psycopg.Connectio
                 event_id=str(uuid.uuid4()),
                 event_name=chat_data.payload["event_name"],
                 user_id=chat_data.user_id,
-                last_updated_at=datetime.fromisoformat(chat_data.payload["start_date"]),
+                last_done_at=datetime.fromisoformat(chat_data.payload["start_date"]),
                 reminder=False,
             )
             add_event(event_data, conn)
             return NewEventMsg(chat_data.payload).completion_no_reminder()
         else:
             return ErrorMsg.unrecognized_reminder_input()
+
+    elif chat_data.current_step == NewEventState.INPUT_CYCLE_PERIOD:
+        if parse_cycle_period(msg) is None:
+            return ErrorMsg.unrecognized_cycle_period()
+        chat_data.payload["cycle_period"] = msg
+        increment, unit = parse_cycle_period(msg)
+        start_date = datetime.fromisoformat(chat_data.payload["start_date"])
+
+        if unit == CycleUnit.DAY:
+            offset = relativedelta(days=+increment)
+        elif unit == CycleUnit.WEEK:
+            offset = relativedelta(weeks=+increment)
+        elif unit == CycleUnit.MONTH:
+            offset = relativedelta(months=+increment)
+        cycle_ends_at = start_date + offset
+        chat_data.current_step = None
+        chat_data.is_completed = True
+        update_chat(chat_data, conn)
+
+        event_data = EventData(
+            event_id=str(uuid.uuid4()),
+            event_name=chat_data.payload["event_name"],
+            user_id=chat_data.user_id,
+            last_done_at=datetime.fromisoformat(chat_data.payload["start_date"]),
+            reminder=True,
+            cycle_period=chat_data.payload["cycle_period"],
+            cycle_ends_at=cycle_ends_at,
+        )
+        add_event(event_data, conn)
+        return NewEventMsg(chat_data.payload).completion_with_reminder()
 
 
 def handle_ongoing_chat(msg: str, chat_data: ChatData, conn: psycopg.Connection) -> str:
@@ -166,7 +213,7 @@ def get_reply_message(msg: str, user_id: str) -> str:
         chat_id = str(uuid.uuid4())
         if msg == Command.NEW:
             chat_data = ChatData(
-                chat_id=chat_id, user_id=user_id, chat_type=ChatType.NEW_EVENT, current_state=NewEventState.INPUT_NAME
+                chat_id=chat_id, user_id=user_id, chat_type=ChatType.NEW_EVENT, current_step=NewEventState.INPUT_NAME
             )
             add_chat(chat_data, conn)
             return NewEventMsg().prompt_for_event_name()
@@ -175,7 +222,6 @@ def get_reply_message(msg: str, user_id: str) -> str:
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event: MessageEvent) -> None:
     reply_message = get_reply_message(msg=event.message.text, user_id=event.source.user_id)
-    print(reply_message)
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message(

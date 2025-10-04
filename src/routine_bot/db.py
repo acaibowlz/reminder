@@ -42,7 +42,7 @@ def create_chats_table(cur: psycopg.Cursor) -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             user_id TEXT NOT NULL REFERENCES users(user_id),
             chat_type TEXT NOT NULL,
-            current_state TEXT NOT NULL,
+            current_step TEXT,
             payload JSON,
             is_completed BOOLEAN NOT NULL DEFAULT FALSE
         )
@@ -58,7 +58,7 @@ def create_events_table(cur: psycopg.Cursor) -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             event_name TEXT NOT NULL,
             user_id TEXT NOT NULL REFERENCES users(user_id),
-            last_updated_at TIMESTAMPTZ NOT NULL,
+            last_done_at TIMESTAMPTZ NOT NULL,
             reminder BOOLEAN NOT NULL,
             cycle_period TEXT,
             cycle_ends_at TIMESTAMPTZ,
@@ -145,14 +145,14 @@ def add_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO chats (chat_id, user_id, chat_type, current_state, payload)
+            INSERT INTO chats (chat_id, user_id, chat_type, current_step, payload)
             VALUES (%s, %s, %s, %s, %s)
             """,
             (
                 chat_data.chat_id,
                 chat_data.user_id,
                 chat_data.chat_type,
-                chat_data.current_state,
+                chat_data.current_step,
                 Json(chat_data.payload),
             ),
         )
@@ -165,13 +165,13 @@ def update_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
         cur.execute(
             """
             UPDATE chats
-            SET current_state = %s,
+            SET current_step = %s,
                 payload       = %s,
                 is_completed  = %s
             WHERE chat_id     = %s
             """,
             (
-                chat_data.current_state,
+                chat_data.current_step,
                 Json(chat_data.payload),
                 chat_data.is_completed,
                 chat_data.chat_id,
@@ -185,7 +185,7 @@ def get_ongoing_chat(user_id: str, conn: psycopg.Connection) -> ChatData | None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT chat_id, user_id, chat_type, current_state, payload, is_completed
+            SELECT chat_id, user_id, chat_type, current_step, payload, is_completed
             FROM chats
             WHERE user_id = %s AND is_completed = %s
             """,
@@ -204,14 +204,14 @@ def add_event(event_data: EventData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO events (event_id, event_name, user_id, last_updated_at, reminder, cycle_period, cycle_ends_at)
+            INSERT INTO events (event_id, event_name, user_id, last_done_at, reminder, cycle_period, cycle_ends_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 event_data.event_id,
                 event_data.event_name,
                 event_data.user_id,
-                event_data.last_updated_at,
+                event_data.last_done_at,
                 event_data.reminder,
                 event_data.cycle_period,
                 event_data.cycle_ends_at,
