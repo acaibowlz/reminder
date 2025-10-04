@@ -60,8 +60,8 @@ def create_events_table(cur: psycopg.Cursor) -> None:
             user_id TEXT NOT NULL REFERENCES users(user_id),
             last_done_at TIMESTAMPTZ NOT NULL,
             reminder BOOLEAN NOT NULL,
-            cycle_period TEXT,
-            cycle_ends_at TIMESTAMPTZ,
+            reminder_cycle TEXT,
+            next_reminder TIMESTAMPTZ,
             share_count INTEGER NOT NULL DEFAULT 0,
             is_active BOOLEAN NOT NULL DEFAULT TRUE
         )
@@ -141,7 +141,7 @@ def add_user(user_id: str, display_name: str, picture_url: str, conn: psycopg.Co
 # -------------------------------- Chat Table -------------------------------- #
 
 
-def add_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
+def add_chat(chat: ChatData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -149,18 +149,18 @@ def add_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
             VALUES (%s, %s, %s, %s, %s)
             """,
             (
-                chat_data.chat_id,
-                chat_data.user_id,
-                chat_data.chat_type,
-                chat_data.current_step,
-                Json(chat_data.payload),
+                chat.chat_id,
+                chat.user_id,
+                chat.chat_type,
+                chat.current_step,
+                Json(chat.payload),
             ),
         )
     conn.commit()
-    logger.info(f"Chat inserted: {chat_data.chat_id}")
+    logger.info(f"Chat inserted: {chat.chat_id}")
 
 
-def update_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
+def update_chat(chat: ChatData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -171,14 +171,14 @@ def update_chat(chat_data: ChatData, conn: psycopg.Connection) -> None:
             WHERE chat_id     = %s
             """,
             (
-                chat_data.current_step,
-                Json(chat_data.payload),
-                chat_data.is_completed,
-                chat_data.chat_id,
+                chat.current_step,
+                Json(chat.payload),
+                chat.is_completed,
+                chat.chat_id,
             ),
         )
     conn.commit()
-    logger.info(f"Chat updated: {chat_data.chat_id}")
+    logger.info(f"Chat updated: {chat.chat_id}")
 
 
 def get_ongoing_chat(user_id: str, conn: psycopg.Connection) -> ChatData | None:
@@ -204,7 +204,7 @@ def add_event(event_data: EventData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO events (event_id, event_name, user_id, last_done_at, reminder, cycle_period, cycle_ends_at)
+            INSERT INTO events (event_id, event_name, user_id, last_done_at, reminder, reminder_cycle, next_reminder)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
@@ -213,8 +213,8 @@ def add_event(event_data: EventData, conn: psycopg.Connection) -> None:
                 event_data.user_id,
                 event_data.last_done_at,
                 event_data.reminder,
-                event_data.cycle_period,
-                event_data.cycle_ends_at,
+                event_data.reminder_cycle,
+                event_data.next_reminder,
             ),
         )
     conn.commit()

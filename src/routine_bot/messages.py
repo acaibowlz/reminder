@@ -13,7 +13,7 @@ DATE_EXAMPLE = "\n".join(
     )
 )
 
-CYCLE_PERIOD_EXAMPLE = "\n".join(
+REMINDER_CYCLE_EXAMPLE = "\n".join(
     (
         "🌟 支援以下格式：",
         "- 3 day",
@@ -30,7 +30,7 @@ class NewEventMsg:
         self.chat_payload = chat_payload
 
     def prompt_for_event_name(self) -> str:
-        return "🎯 請輸入欲新增的事件名稱（限 20 字元內）"
+        return "🎯 請輸入欲新增的事件名稱（限 2 至 20 字元）"
 
     def prompt_for_start_date(self) -> str:
         return "\n".join(
@@ -54,7 +54,7 @@ class NewEventMsg:
             )
         )
 
-    def prompt_for_cycle_period(self) -> str:
+    def prompt_for_reminder_cycle(self) -> str:
         return "\n".join(
             (
                 f"🎯 新事件［{self.chat_payload['event_name']}］",
@@ -63,7 +63,7 @@ class NewEventMsg:
                 "",
                 "➡️ 請輸入提醒週期",
                 "",
-                CYCLE_PERIOD_EXAMPLE,
+                REMINDER_CYCLE_EXAMPLE,
             )
         )
 
@@ -87,7 +87,7 @@ class NewEventMsg:
                 "",
                 f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
                 "",
-                f"⏰ 提醒週期：{self.chat_payload['cycle_period']}",
+                f"⏰ 提醒週期：{self.chat_payload['reminder_cycle']}",
                 "",
                 "✅ 新增完成！",
             )
@@ -100,15 +100,15 @@ class ErrorMsg:
         return "指令無法辨識🤣 請再試一次😌"
 
     @staticmethod
-    def unrecognized_date() -> str:
-        return "\n".join(("無效的輸入😱 請再試一次😌", "", DATE_EXAMPLE))
+    def invalid_start_date_input() -> str:
+        return "\n".join(("無效的輸入😱 請再試一次😌", "", "➡️ 請輸入事件起始日期", "", DATE_EXAMPLE))
 
     @staticmethod
-    def unrecognized_cycle_period() -> str:
-        return "\n".join(("無效的輸入😱 請再試一次😌", "", CYCLE_PERIOD_EXAMPLE))
+    def invalid_reminder_cycle() -> str:
+        return "\n".join(("無效的輸入😱 請再試一次😌", "", "➡️ 請輸入提醒週期", "", REMINDER_CYCLE_EXAMPLE))
 
     @staticmethod
-    def unrecognized_reminder_input() -> str:
+    def invalid_reminder_input() -> str:
         return "\n".join(("無效的輸入😱 請再試一次😌", "", "➡️ 請輸入是否設定提醒（Y / N）"))
 
     @staticmethod
@@ -118,6 +118,14 @@ class ErrorMsg:
     @staticmethod
     def event_name_too_long() -> str:
         return "事件名稱不可以超過 20 字元🤣 請再試一次😌"
+
+    @staticmethod
+    def event_name_too_short() -> str:
+        return "事件名稱不可以少於 2 字元🤣 請再試一次😌"
+
+    @staticmethod
+    def invalid_char_for_event_name(char: str) -> str:
+        pass
 
 
 class GreetingMsg:

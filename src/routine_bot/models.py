@@ -21,8 +21,8 @@ class EventData:
     user_id: str
     last_done_at: datetime
     reminder: bool
-    cycle_period: str | None = None
-    cycle_ends_at: datetime | None = None
+    reminder_cycle: str | None = None
+    next_reminder: datetime | None = None
     share_count: int = 0
 
 

@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+ENV = os.getenv("ENV")
+
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
@@ -16,18 +18,18 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {"simple": {"format": "[%(levelname)s] %(name)s - %(message)s"}},
+    "formatters": {"simple": {"format": "[%(levelname)8s] %(name)-20s - %(message)s"}},
     "handlers": {
         "stream": {
             "class": "logging.StreamHandler",
             "formatter": "simple",
-            "level": "INFO",
+            "level": "DEBUG",
             "stream": "ext://sys.stdout",
         }
     },
     "root": {
         "handlers": ["stream"],
-        "level": "INFO",
+        "level": "DEBUG" if ENV == "develop" else "INFO",
     },
     "loggers": {
         "uvicorn.error": {
@@ -89,4 +91,4 @@ class NewEventState:
     INPUT_NAME = "input_name"
     INPUT_START_DATE = "input_start_date"
     INPUT_REMINDER = "input_reminder"
-    INPUT_CYCLE_PERIOD = "input_cycle_period"
+    INPUT_REMINDER_CYCLE = "input_reminder_cycle"
