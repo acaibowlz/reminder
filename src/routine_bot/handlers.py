@@ -20,6 +20,7 @@ from routine_bot.constants import (
     ChatType,
     Command,
     CycleUnit,
+    FindEventSteps,
     NewEventSteps,
 )
 from routine_bot.db import (
@@ -27,11 +28,12 @@ from routine_bot.db import (
     add_event,
     add_user,
     conn,
+    get_event_data,
     get_event_id,
     get_ongoing_chat,
     update_chat,
 )
-from routine_bot.messages import ErrorMsg, NewEventMsg
+from routine_bot.messages import ErrorMsg, FindEventMsg, NewEventMsg
 from routine_bot.models import ChatData, EventData
 
 logger = logging.getLogger(__name__)
@@ -186,13 +188,13 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             add_event(event_data, conn)
             return NewEventMsg(chat.payload).completion_no_reminder()
         else:
-            logger.info(f"Invalid reminder input: {msg}")
+            logger.debug(f"Invalid reminder input: {msg}")
             return ErrorMsg.invalid_reminder_input()
 
     elif chat.current_step == NewEventSteps.INPUT_REMINDER_CYCLE:
         logger.info("Processing reminder cycle input")
         if parse_reminder_cycle(msg) is None:
-            logger.info(f"Invalid reminder cycle input: {msg}")
+            logger.debug(f"Invalid reminder cycle input: {msg}")
             return ErrorMsg.invalid_reminder_cycle()
         chat.payload["reminder_cycle"] = msg
         increment, unit = parse_reminder_cycle(msg)
@@ -225,9 +227,32 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
         return NewEventMsg(chat.payload).completion_with_reminder()
 
 
+def handle_find_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
+    if chat.current_step == FindEventSteps.INPUT_NAME:
+        logger.info("Processing event name input")
+        event_name = msg
+        error_msg = validate_event_name(event_name)
+        if error_msg is not None:
+            logger.info(f"Invalid event name input: {event_name}")
+            return error_msg
+        event_data = get_event_data(chat.user_id, event_name, conn)
+        if event_data is None:
+            logger.info(f"Event name not found: {event_name}")
+            return ErrorMsg.event_name_not_found(event_name)
+        logger.info(f"Event name input: {event_name}")
+        logger.info(f"Event found: {event_data.event_id}")
+        chat.current_step = None
+        chat.is_completed = True
+        update_chat(chat, conn)
+        logger.info(f"Chat completed: {chat.chat_id}")
+        return FindEventMsg(event_data).show_event_info()
+
+
 def handle_ongoing_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
     if chat.chat_type == ChatType.NEW_EVENT:
         return handle_new_event_chat(msg, chat, conn)
+    elif chat.chat_type == ChatType.FIND_EVENT:
+        return handle_find_event_chat(msg, chat, conn)
 
 
 def get_reply_message(msg: str, user_id: str) -> str:
@@ -256,6 +281,14 @@ def get_reply_message(msg: str, user_id: str) -> str:
             )
             add_chat(chat, conn)
             return NewEventMsg().prompt_for_event_name()
+
+        elif msg == Command.FIND:
+            logger.info("Creating new chat, chat type: find event")
+            chat = ChatData(
+                chat_id=chat_id, user_id=user_id, chat_type=ChatType.FIND_EVENT, current_step=FindEventSteps.INPUT_NAME
+            )
+            add_chat(chat, conn)
+            return FindEventMsg().prompt_for_event_name()
 
 
 @handler.add(MessageEvent, message=TextMessageContent)

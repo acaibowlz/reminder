@@ -341,5 +341,28 @@ def get_event_id(user_id: str, event_name: str, conn: psycopg.Connection) -> str
         return result[0]
 
 
+def get_event_data(user_id: str, event_name: str, conn: psycopg.Connection) -> EventData | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event_id, event_name, user_id, last_done_at, reminder, reminder_cycle, next_reminder, share_count
+            FROM events
+            WHERE user_id = %s AND event_name = %s
+            """,
+            (user_id, event_name),
+        )
+        result = cur.fetchone()
+        if result is None:
+            return None
+        return EventData(*result)
+
+
+def get_all_active_events_with_reminder(conn: psycopg.Connection) -> list[str]:
+    with conn.cursor() as cur:
+        cur.execute("SELECT event_id FROM events WHERE is_active = true AND reminder = true")
+        result = cur.fetchall()
+        return [row[0] for row in result]
+
+
 def update_event():
     pass

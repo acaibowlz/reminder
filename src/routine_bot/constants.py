@@ -59,6 +59,7 @@ class Command:
     EDIT = "/edit"
     DELETE = "/delete"
     VIEW = "/view"
+    ABORT = "/abort"
     # premium features
     UPGRADE = "/upgrade"
     SHARE = "/share"
@@ -92,3 +93,7 @@ class NewEventSteps:
     INPUT_START_DATE = "input_start_date"
     INPUT_REMINDER = "input_reminder"
     INPUT_REMINDER_CYCLE = "input_reminder_cycle"
+
+
+class FindEventSteps:
+    INPUT_NAME = "input_name"
