@@ -20,7 +20,7 @@ from routine_bot.constants import (
     ChatType,
     Command,
     CycleUnit,
-    NewEventState,
+    NewEventSteps,
 )
 from routine_bot.db import (
     add_chat,
@@ -131,7 +131,7 @@ def parse_reminder_cycle(msg: str) -> tuple[int, str] | None:
 
 
 def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
-    if chat.current_step == NewEventState.INPUT_NAME:
+    if chat.current_step == NewEventSteps.INPUT_NAME:
         logger.info("Processing event name input")
         event_name = msg.strip()
         # validate event name
@@ -143,28 +143,28 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             return ErrorMsg.event_name_duplicated(event_name)
         # store event name in state data
         chat.payload["event_name"] = event_name
-        chat.current_step = NewEventState.INPUT_START_DATE
+        chat.current_step = NewEventSteps.INPUT_START_DATE
         update_chat(chat, conn)
         logger.info(f"Added event name {event_name} to chat payload")
         return NewEventMsg(chat.payload).prompt_for_start_date()
 
-    elif chat.current_step == NewEventState.INPUT_START_DATE:
+    elif chat.current_step == NewEventSteps.INPUT_START_DATE:
         logger.info("Processing start date input")
         start_date = parse_date(msg)
         if start_date is None:
             logger.info(f"Invalid start date input: {msg}")
             return ErrorMsg.invalid_start_date_input()
         chat.payload["start_date"] = start_date.isoformat()  # datetime is not JSON serializable
-        chat.current_step = NewEventState.INPUT_REMINDER
+        chat.current_step = NewEventSteps.INPUT_REMINDER
         logger.info(f"Added start date {chat.payload['start_date'][:10]} to chat payload")
         update_chat(chat, conn)
         return NewEventMsg(chat.payload).prompt_for_reminder()
 
-    elif chat.current_step == NewEventState.INPUT_REMINDER:
+    elif chat.current_step == NewEventSteps.INPUT_REMINDER:
         logger.info("Processing reminder input")
         if msg.upper() == "Y":
             chat.payload["reminder"] = True
-            chat.current_step = NewEventState.INPUT_REMINDER_CYCLE
+            chat.current_step = NewEventSteps.INPUT_REMINDER_CYCLE
             logger.info("Added reminder=True to chat payload")
             update_chat(chat, conn)
             return NewEventMsg(chat.payload).prompt_for_reminder_cycle()
@@ -189,7 +189,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             logger.info(f"Invalid reminder input: {msg}")
             return ErrorMsg.invalid_reminder_input()
 
-    elif chat.current_step == NewEventState.INPUT_REMINDER_CYCLE:
+    elif chat.current_step == NewEventSteps.INPUT_REMINDER_CYCLE:
         logger.info("Processing reminder cycle input")
         if parse_reminder_cycle(msg) is None:
             logger.info(f"Invalid reminder cycle input: {msg}")
@@ -252,7 +252,7 @@ def get_reply_message(msg: str, user_id: str) -> str:
         if msg == Command.NEW:
             logger.info("Creating new chat, chat type: new event")
             chat = ChatData(
-                chat_id=chat_id, user_id=user_id, chat_type=ChatType.NEW_EVENT, current_step=NewEventState.INPUT_NAME
+                chat_id=chat_id, user_id=user_id, chat_type=ChatType.NEW_EVENT, current_step=NewEventSteps.INPUT_NAME
             )
             add_chat(chat, conn)
             return NewEventMsg().prompt_for_event_name()

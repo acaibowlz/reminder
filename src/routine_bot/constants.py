@@ -87,7 +87,7 @@ class ChatType:
     DELETE_EVENT = "delete_event"
 
 
-class NewEventState:
+class NewEventSteps:
     INPUT_NAME = "input_name"
     INPUT_START_DATE = "input_start_date"
     INPUT_REMINDER = "input_reminder"
