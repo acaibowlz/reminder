@@ -143,7 +143,7 @@ def create_events_table(cur: psycopg.Cursor) -> None:
     )
 
 
-def create_updated_table(cur: psycopg.Cursor) -> None:
+def create_updates_table(cur: psycopg.Cursor) -> None:
     """
     Updates Table
     --------------
@@ -166,7 +166,7 @@ def create_updated_table(cur: psycopg.Cursor) -> None:
     """
     cur.execute(
         """
-        CREATE updates records (
+        CREATE TABLE updates (
             update_id TEXT PRIMARY KEY,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             event_id TEXT NOT NULL REFERENCES events(event_id),
@@ -215,7 +215,7 @@ def init_db(conn: psycopg.Connection):
         "users": create_users_table,
         "chats": create_chats_table,
         "events": create_events_table,
-        "records": create_records_table,
+        "updates": create_updates_table,
         "shares": create_shares_table,
     }
     with conn.cursor() as cur:
