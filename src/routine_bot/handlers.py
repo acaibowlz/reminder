@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -9,7 +11,6 @@ from dateutil.relativedelta import relativedelta
 from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent, UnfollowEvent
-from linebot.v3.webhooks.models.sticker_message_content import re
 
 from routine_bot.constants import (
     DATABASE_URL,
@@ -29,12 +30,13 @@ from routine_bot.db import (
     add_event,
     add_user,
     conn,
+    get_chat_data,
     get_event_data,
     get_event_id,
-    get_ongoing_chat,
+    get_ongoing_chat_id,
     update_chat,
 )
-from routine_bot.messages import ErrorMsg, FindEventMsg, NewEventMsg
+from routine_bot.messages import AbortMsg, ErrorMsg, FindEventMsg, NewEventMsg
 from routine_bot.models import ChatData, EventData
 
 logger = logging.getLogger(__name__)
@@ -43,34 +45,24 @@ configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 
-@handler.add(FollowEvent)
-def handle_user_added(event: FollowEvent) -> None:
-    user_id = event.source.user_id
-    resp = requests.get(
-        f"https://api.line.me/v2/bot/profile/{user_id}",
-        headers={"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"},
-    )
-    user_info = resp.json()
-    display_name = user_info.get("displayName")
-    picture_url = user_info.get("pictureUrl")
-    logger.info(f"Added (or unblocked) by: {user_id}")
-    logger.info(f"Display name: {display_name}")
+def sanitize_msg(msg: str) -> str:
+    """
+    Cleans and normalizes user input text for consistent downstream processing.
 
-    add_user(user_id=user_id, display_name=display_name, picture_url=picture_url, conn=conn)
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="hello my new friend!")])
-        )
-
-
-@handler.add(UnfollowEvent)
-def handle_user_blocked(event: UnfollowEvent) -> None:
-    user_id = event.source.user_id
-    logger.info(f"Blocked by: {user_id}")
-
-    # handle if no user found
-    pass
+    Steps:
+    1. Trim leading/trailing whitespace and newlines
+    2. Normalize Unicode (NFKC) — converts fullwidth to halfwidth, etc.
+    3. Collapse multiple spaces/newlines
+    4. Remove invisible control characters
+    """
+    if not msg:
+        return ""
+    text = unicodedata.normalize("NFKC", msg)
+    text = text.strip()
+    text = re.sub(r"[\t\r\n]+", " ", text)
+    text = re.sub(r" {2,}", " ", text)
+    text = re.sub(r"[\u200B-\u200D\uFEFF]", "", text)
+    return text
 
 
 def validate_event_name(event_name: str) -> str | None:
@@ -136,7 +128,7 @@ def parse_reminder_cycle(msg: str) -> tuple[int, str] | None:
 def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
     if chat.current_step == NewEventSteps.INPUT_NAME:
         logger.info("Processing event name input")
-        event_name = msg.strip()
+        event_name = msg
         # validate event name
         error_msg = validate_event_name(event_name)
         if error_msg is not None:
@@ -149,7 +141,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
         chat.current_step = NewEventSteps.INPUT_START_DATE
         update_chat(chat, conn)
         logger.info(f"Added event name {event_name} to chat payload")
-        return NewEventMsg(chat.payload).prompt_for_start_date()
+        return NewEventMsg.prompt_for_start_date(chat.payload)
 
     elif chat.current_step == NewEventSteps.INPUT_START_DATE:
         logger.info("Processing start date input")
@@ -161,7 +153,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
         chat.current_step = NewEventSteps.INPUT_REMINDER
         logger.info(f"Added start date {chat.payload['start_date'][:10]} to chat payload")
         update_chat(chat, conn)
-        return NewEventMsg(chat.payload).prompt_for_reminder()
+        return NewEventMsg.prompt_for_reminder(chat.payload)
 
     elif chat.current_step == NewEventSteps.INPUT_REMINDER:
         logger.info("Processing reminder input")
@@ -170,7 +162,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             chat.current_step = NewEventSteps.INPUT_REMINDER_CYCLE
             logger.info("Added reminder=True to chat payload")
             update_chat(chat, conn)
-            return NewEventMsg(chat.payload).prompt_for_reminder_cycle()
+            return NewEventMsg.prompt_for_reminder_cycle(chat.payload)
         elif msg.upper() == "N":
             chat.payload["reminder"] = False
             chat.current_step = None
@@ -187,7 +179,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
                 reminder=False,
             )
             add_event(event_data, conn)
-            return NewEventMsg(chat.payload).completion_no_reminder()
+            return NewEventMsg.completion_no_reminder(chat.payload)
         else:
             logger.debug(f"Invalid reminder input: {msg}")
             return ErrorMsg.invalid_reminder_input()
@@ -225,76 +217,126 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             next_reminder=next_reminder,
         )
         add_event(event_data, conn)
-        return NewEventMsg(chat.payload).completion_with_reminder()
+        return NewEventMsg.completion_with_reminder(chat.payload)
 
 
 def handle_find_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
     if chat.current_step == FindEventSteps.INPUT_NAME:
         logger.info("Processing event name input")
         event_name = msg
+
         error_msg = validate_event_name(event_name)
         if error_msg is not None:
             logger.info(f"Invalid event name input: {event_name}")
             return error_msg
-        event_data = get_event_data(chat.user_id, event_name, conn)
-        if event_data is None:
+        event_id = get_event_id(chat.user_id, event_name, conn)
+        if event_id is None:
             logger.info(f"Event name not found: {event_name}")
             return ErrorMsg.event_name_not_found(event_name)
+
+        event_data = get_event_data(event_id, conn)
         logger.info(f"Event name input: {event_name}")
         logger.info(f"Event found: {event_data.event_id}")
         chat.current_step = None
         chat.status = ChatStatus.COMPLETED
         update_chat(chat, conn)
         logger.info(f"Chat completed: {chat.chat_id}")
-        return FindEventMsg(event_data).show_event_info()
+        return FindEventMsg.show_event_info(event_data)
+
+
+def create_new_chat(command: str, user_id: str, conn: psycopg.Connection) -> str:
+    chat_id = str(uuid.uuid4())
+    if command == Command.NEW:
+        logger.info("Creating new chat, chat type: new event")
+        chat = ChatData(
+            chat_id=chat_id,
+            user_id=user_id,
+            chat_type=ChatType.NEW_EVENT,
+            current_step=NewEventSteps.INPUT_NAME,
+        )
+        add_chat(chat, conn)
+        return NewEventMsg().prompt_for_event_name()
+    if command == Command.FIND:
+        logger.info("Creating new chat, chat type: find event")
+        chat = ChatData(
+            chat_id=chat_id,
+            user_id=user_id,
+            chat_type=ChatType.FIND_EVENT,
+            current_step=FindEventSteps.INPUT_NAME,
+        )
+        add_chat(chat, conn)
+        return FindEventMsg.prompt_for_event_name()
 
 
 def handle_ongoing_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
     if chat.chat_type == ChatType.NEW_EVENT:
         return handle_new_event_chat(msg, chat, conn)
-    elif chat.chat_type == ChatType.FIND_EVENT:
+    if chat.chat_type == ChatType.FIND_EVENT:
         return handle_find_event_chat(msg, chat, conn)
 
 
 def get_reply_message(msg: str, user_id: str) -> str:
     logger.debug(f"Message received: {msg}")
     with psycopg.connect(conninfo=DATABASE_URL) as conn:
-        # handle ongoing chat if there exists
-        chat = get_ongoing_chat(user_id, conn)
-        if chat is not None:
-            logger.debug(f"Ongoing chat found: {chat.chat_id}")
-            logger.debug(f"Chat type: {chat.chat_type}")
-            logger.debug(f"Current step: {chat.current_step}")
-            return handle_ongoing_chat(msg, chat, conn)
+        ongoing_chat_id = get_ongoing_chat_id(user_id, conn)
 
-        # validate if msg is command
-        if not msg.startswith("/"):
-            return "hello!"
-        if msg not in SUPPORTED_COMMANDS:
-            return ErrorMsg.unrecognized_command()
+        if ongoing_chat_id is None:
+            if msg == Command.ABORT:
+                return AbortMsg.no_ongoing_chat()
+            if not msg.startswith("/"):
+                return "hello!"
+            if msg not in SUPPORTED_COMMANDS:
+                return ErrorMsg.unrecognized_command()
+            return create_new_chat(msg, user_id, conn)
 
-        # create new chat
-        chat_id = str(uuid.uuid4())
-        if msg == Command.NEW:
-            logger.info("Creating new chat, chat type: new event")
-            chat = ChatData(
-                chat_id=chat_id, user_id=user_id, chat_type=ChatType.NEW_EVENT, current_step=NewEventSteps.INPUT_NAME
-            )
-            add_chat(chat, conn)
-            return NewEventMsg().prompt_for_event_name()
+        chat = get_chat_data(ongoing_chat_id, conn)
+        logger.debug(f"Ongoing chat found: {chat.chat_id}")
+        logger.debug(f"Chat type: {chat.chat_type}")
+        logger.debug(f"Current step: {chat.current_step}")
 
-        elif msg == Command.FIND:
-            logger.info("Creating new chat, chat type: find event")
-            chat = ChatData(
-                chat_id=chat_id, user_id=user_id, chat_type=ChatType.FIND_EVENT, current_step=FindEventSteps.INPUT_NAME
-            )
-            add_chat(chat, conn)
-            return FindEventMsg().prompt_for_event_name()
+        if msg == Command.ABORT:
+            chat.status = ChatStatus.ABORTED
+            update_chat(chat, conn)
+            logger.info(f"Chat aborted: {chat.chat_id}")
+            return AbortMsg.ongoing_chat_aborted()
+
+        return handle_ongoing_chat(msg, chat, conn)
+
+
+@handler.add(FollowEvent)
+def handle_user_added(event: FollowEvent) -> None:
+    user_id = event.source.user_id
+    resp = requests.get(
+        f"https://api.line.me/v2/bot/profile/{user_id}",
+        headers={"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"},
+    )
+    user_info = resp.json()
+    display_name = user_info.get("displayName")
+    picture_url = user_info.get("pictureUrl")
+    logger.info(f"Added (or unblocked) by: {user_id}")
+    logger.info(f"Display name: {display_name}")
+
+    add_user(user_id=user_id, display_name=display_name, picture_url=picture_url, conn=conn)
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message(
+            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="hello my new friend!")])
+        )
+
+
+@handler.add(UnfollowEvent)
+def handle_user_blocked(event: UnfollowEvent) -> None:
+    user_id = event.source.user_id
+    logger.info(f"Blocked by: {user_id}")
+
+    # handle if no user found
+    pass
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event: MessageEvent) -> None:
-    reply_message = get_reply_message(msg=event.message.text, user_id=event.source.user_id)
+    msg = sanitize_msg(event.message.text)
+    reply_message = get_reply_message(msg=msg, user_id=event.source.user_id)
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message(

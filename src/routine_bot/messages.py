@@ -28,16 +28,15 @@ REMINDER_CYCLE_EXAMPLE = "\n".join(
 
 
 class NewEventMsg:
-    def __init__(self, chat_payload: dict[str, Any] | None = None) -> None:
-        self.chat_payload = chat_payload
-
-    def prompt_for_event_name(self) -> str:
+    @staticmethod
+    def prompt_for_event_name() -> str:
         return "🎯 請輸入欲新增的事件名稱（限 2 至 20 字元）"
 
-    def prompt_for_start_date(self) -> str:
+    @staticmethod
+    def prompt_for_start_date(chat_payload: dict[str, str]) -> str:
         return "\n".join(
             (
-                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                f"🎯 新事件［{chat_payload['event_name']}］",
                 "",
                 "➡️ 請輸入事件起始日期",
                 "",
@@ -45,23 +44,25 @@ class NewEventMsg:
             )
         )
 
-    def prompt_for_reminder(self) -> str:
+    @staticmethod
+    def prompt_for_reminder(chat_payload: dict[str, str]) -> str:
         return "\n".join(
             (
-                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                f"🎯 新事件［{chat_payload['event_name']}］",
                 "",
-                f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
+                f"🗓 起始日期：{chat_payload['start_date'][:10]}",
                 "",
                 "➡️ 請輸入是否設定提醒（Y / N）",
             )
         )
 
-    def prompt_for_reminder_cycle(self) -> str:
+    @staticmethod
+    def prompt_for_reminder_cycle(chat_payload: dict[str, str]) -> str:
         return "\n".join(
             (
-                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                f"🎯 新事件［{chat_payload['event_name']}］",
                 "",
-                f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
+                f"🗓 起始日期：{chat_payload['start_date'][:10]}",
                 "",
                 "➡️ 請輸入提醒週期",
                 "",
@@ -69,12 +70,13 @@ class NewEventMsg:
             )
         )
 
-    def completion_no_reminder(self):
+    @staticmethod
+    def completion_no_reminder(chat_payload: dict[str, str]):
         return "\n".join(
             (
-                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                f"🎯 新事件［{chat_payload['event_name']}］",
                 "",
-                f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
+                f"🗓 起始日期：{chat_payload['start_date'][:10]}",
                 "",
                 "🔕 提醒設定：關閉",
                 "",
@@ -82,14 +84,15 @@ class NewEventMsg:
             )
         )
 
-    def completion_with_reminder(self):
+    @staticmethod
+    def completion_with_reminder(chat_payload: dict[str, str]):
         return "\n".join(
             (
-                f"🎯 新事件［{self.chat_payload['event_name']}］",
+                f"🎯 新事件［{chat_payload['event_name']}］",
                 "",
-                f"🗓 起始日期：{self.chat_payload['start_date'][:10]}",
+                f"🗓 起始日期：{chat_payload['start_date'][:10]}",
                 "",
-                f"⏰ 提醒週期：{self.chat_payload['reminder_cycle']}",
+                f"⏰ 提醒週期：{chat_payload['reminder_cycle']}",
                 "",
                 "✅ 新增完成！",
             )
@@ -97,25 +100,24 @@ class NewEventMsg:
 
 
 class FindEventMsg:
-    def __init__(self, event_data: EventData | None = None) -> None:
-        self.event_data = event_data
-
-    def prompt_for_event_name(self) -> str:
+    @staticmethod
+    def prompt_for_event_name() -> str:
         return "🎯 請輸入欲查詢的事件名稱"
 
-    def show_event_info(self) -> str:
+    @staticmethod
+    def show_event_info(event_data: EventData) -> str:
         lines = [
-            f"🎯 事件名稱：{self.event_data.event_name}",
+            f"🎯 事件名稱：{event_data.event_name}",
             "",
-            f"🗓 最近完成時間：{self.event_data.last_done_at.strftime('%Y-%m-%d')}",
+            f"🗓 最近完成時間：{event_data.last_done_at.strftime('%Y-%m-%d')}",
             "",
         ]
-        if self.event_data.reminder:
+        if event_data.reminder:
             lines.extend(
                 [
-                    f"⏰ 提醒週期：{self.event_data.reminder_cycle}",
+                    f"⏰ 提醒週期：{event_data.reminder_cycle}",
                     "",
-                    f"🔔 下次提醒時間：{self.event_data.next_reminder.strftime('%Y-%m-%d')}",
+                    f"🔔 下次提醒時間：{event_data.next_reminder.strftime('%Y-%m-%d')}",
                 ]
             )
         else:
@@ -161,3 +163,13 @@ class GreetingMsg:
     @staticmethod
     def random() -> str:
         pass
+
+
+class AbortMsg:
+    @staticmethod
+    def no_ongoing_chat() -> str:
+        return "沒有進行中的操作可以取消🤣"
+
+    @staticmethod
+    def ongoing_chat_aborted() -> str:
+        return "已中止目前的操作🙏\n請重新輸入新的指令😉"

@@ -89,7 +89,7 @@ def create_chats_table(cur: psycopg.Cursor) -> None:
             chat_type TEXT NOT NULL,
             current_step TEXT,
             payload JSON,
-            status TEXT NOT NULL DEFAULT 'ongoing'
+            status TEXT NOT NULL
         )
         """
     )
@@ -293,15 +293,27 @@ def update_chat(chat: ChatData, conn: psycopg.Connection) -> None:
     logger.info(f"Chat updated: {chat.chat_id}")
 
 
-def get_ongoing_chat(user_id: str, conn: psycopg.Connection) -> ChatData | None:
+def get_ongoing_chat_id(user_id: str, conn: psycopg.Connection) -> str | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT chat_id FROM chats WHERE user_id = %s AND status = %s",
+            (user_id, ChatStatus.ONGOING),
+        )
+        result = cur.fetchone()
+        if result is None:
+            return None
+        return result[0]
+
+
+def get_chat_data(chat_id: str, conn: psycopg.Connection) -> ChatData | None:
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT chat_id, user_id, chat_type, current_step, payload, status
             FROM chats
-            WHERE user_id = %s AND status = %s
+            WHERE chat_id = %s
             """,
-            (user_id, ChatStatus.ONGOING),
+            (chat_id,),
         )
         result = cur.fetchone()
         if result is None:
@@ -342,15 +354,15 @@ def get_event_id(user_id: str, event_name: str, conn: psycopg.Connection) -> str
         return result[0]
 
 
-def get_event_data(user_id: str, event_name: str, conn: psycopg.Connection) -> EventData | None:
+def get_event_data(event_id: str, conn: psycopg.Connection) -> EventData | None:
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT event_id, event_name, user_id, last_done_at, reminder, reminder_cycle, next_reminder, share_count
             FROM events
-            WHERE user_id = %s AND event_name = %s
+            WHERE event_id = %s
             """,
-            (user_id, event_name),
+            (event_id,),
         )
         result = cur.fetchone()
         if result is None:
