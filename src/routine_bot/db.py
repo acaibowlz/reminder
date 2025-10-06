@@ -17,6 +17,29 @@ def table_exists(cur, table_name: str) -> bool:
 
 
 def create_users_table(cur: psycopg.Cursor) -> None:
+    """
+    Users Table
+    -----------
+    - user_id :
+        Unique identifier for each user (corresponds to the LINE user ID).
+    - created_at :
+        Timestamp when the user record was created.
+    - display_name :
+        Display name of the user, retrieved from LINE's Get Profile API.
+    - picture_url :
+        URL of the user's profile picture, retrieved from LINE's Get Profile API.
+    - profile_refreshed_at :
+        Timestamp of the most recent update from LINE's Get Profile API.
+    - event_count :
+        Total number of events owned by the user.
+    - is_premium :
+        Indicates whether the user is subscribed to a premium plan.
+    - premium_until :
+        Expiration timestamp of the user's premium feature access.
+        Users can unsubscribe at any time, but premium access remains active until this timestamp.
+    - is_blocked :
+        Indicates whether the user has blocked the bot
+    """
     cur.execute(
         """
         CREATE TABLE users (
@@ -35,6 +58,27 @@ def create_users_table(cur: psycopg.Cursor) -> None:
 
 
 def create_chats_table(cur: psycopg.Cursor) -> None:
+    """
+    Chats Table
+    ------------
+    - chat_id :
+        Unique identifier for each chat session.
+    - created_at :
+        Timestamp indicating when the chat record was created.
+    - user_id :
+        Identifier of the user associated with the chat session.
+    - chat_type :
+        Specifies the purpose of the chat, i.e., which event or action is being processed.
+        Refer to `ChatType` in `constants.py`.
+    - current_step :
+        Indicates the current processing stage within the chat workflow.
+        Refer to the corresponding `*Steps` constants in `constants.py`.
+        Set to NULL when the chat session is completed.
+    - payload :
+        JSON object containing intermediate data collected during the chat flow.
+    - is_completed :
+        Indicates whether the chat session has been completed.
+    """
     cur.execute(
         """
         CREATE TABLE chats (
@@ -51,6 +95,36 @@ def create_chats_table(cur: psycopg.Cursor) -> None:
 
 
 def create_events_table(cur: psycopg.Cursor) -> None:
+    """
+    Events Table
+    ------------
+    - event_id :
+        Unique identifier for each event.
+    - created_at :
+        Timestamp indicating when the event record was created.
+    - event_name :
+        Name of the event.
+    - user_id :
+        Identifier of the user who owns the event.
+    - last_done_at :
+        Timestamp of the most recent time the user completed the event.
+        Event completion timestamps are stored at day-level precision,
+        with the time set to 00:00 (UTC+8).
+    - reminder :
+        Indicates whether reminders are enabled for the event.
+    - reminder_cycle :
+        Specifies the recurrence interval of the reminder (e.g., daily, weekly).
+    - next_reminder :
+        If the current time is later than this timestamp, the reminder is considered due,
+        and the bot will send the reminder on its next scheduled run.
+    - share_count :
+        The number of users this event is shared with.
+        All shared users will also receive reminder notifications.
+    - is_active :
+        If a user blocks the bot, the events they own are marked as inactive,
+        and their associated reminders will no longer be triggered.
+    """
+
     cur.execute(
         """
         CREATE TABLE events (
@@ -69,11 +143,31 @@ def create_events_table(cur: psycopg.Cursor) -> None:
     )
 
 
-def create_records_table(cur: psycopg.Cursor) -> None:
+def create_updated_table(cur: psycopg.Cursor) -> None:
+    """
+    Updates Table
+    --------------
+    - update_id :
+        Unique identifier for each update entry.
+        This table records every instance in which a user updates
+        the completion time of an event.
+    - created_at :
+        Timestamp indicating when the update entry was created.
+    - event_id :
+        Identifier of the event associated with this update.
+    - event_name :
+        Name of the event associated with this update.
+    - user_id :
+        Identifier of the user who owns the event.
+    - done_at :
+        Timestamp representing the newly updated completion time of the event.
+        Event completion times are stored with day-level precision,
+        with the time component normalized to 00:00 (UTC+8).
+    """
     cur.execute(
         """
-        CREATE TABLE records (
-            record_id TEXT PRIMARY KEY,
+        CREATE updates records (
+            update_id TEXT PRIMARY KEY,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             event_id TEXT NOT NULL REFERENCES events(event_id),
             event_name TEXT NOT NULL,
@@ -85,6 +179,23 @@ def create_records_table(cur: psycopg.Cursor) -> None:
 
 
 def create_shares_table(cur: psycopg.Cursor) -> None:
+    """
+    Shares Table
+    ------------
+    - share_id :
+        Unique identifier for each share record.
+        The shared events will also send reminder notification to receipients.
+    - created_at :
+        Timestamp indicating when the share record was created.
+    - event_id :
+        Identifier of the event being shared.
+    - event_name :
+        Name of the event being shared.
+    - owner_id :
+        Identifier of the user who owns the event.
+    - recipient_id :
+        Identifier of the user with whom the event is shared.
+    """
     cur.execute(
         """
         CREATE TABLE shares (
