@@ -3,7 +3,7 @@ import logging
 import psycopg
 from psycopg.types.json import Json
 
-from routine_bot.constants import DATABASE_URL
+from routine_bot.constants import DATABASE_URL, ChatStatus
 from routine_bot.models import ChatData, EventData
 
 logger = logging.getLogger(__name__)
@@ -76,8 +76,9 @@ def create_chats_table(cur: psycopg.Cursor) -> None:
         Set to NULL when the chat session is completed.
     - payload :
         JSON object containing intermediate data collected during the chat flow.
-    - is_completed :
-        Indicates whether the chat session has been completed.
+    - status :
+        The current status of the chat session.
+        Refer to `ChatStatus` in `constants.py`.
     """
     cur.execute(
         """
@@ -88,7 +89,7 @@ def create_chats_table(cur: psycopg.Cursor) -> None:
             chat_type TEXT NOT NULL,
             current_step TEXT,
             payload JSON,
-            is_completed BOOLEAN NOT NULL DEFAULT FALSE
+            status TEXT NOT NULL DEFAULT 'ongoing'
         )
         """
     )
@@ -277,14 +278,14 @@ def update_chat(chat: ChatData, conn: psycopg.Connection) -> None:
             """
             UPDATE chats
             SET current_step = %s,
-                payload       = %s,
-                is_completed  = %s
-            WHERE chat_id     = %s
+                payload      = %s,
+                status       = %s
+            WHERE chat_id    = %s
             """,
             (
                 chat.current_step,
                 Json(chat.payload),
-                chat.is_completed,
+                chat.status,
                 chat.chat_id,
             ),
         )
@@ -296,11 +297,11 @@ def get_ongoing_chat(user_id: str, conn: psycopg.Connection) -> ChatData | None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT chat_id, user_id, chat_type, current_step, payload, is_completed
+            SELECT chat_id, user_id, chat_type, current_step, payload, status
             FROM chats
-            WHERE user_id = %s AND is_completed = %s
+            WHERE user_id = %s AND status = %s
             """,
-            (user_id, False),
+            (user_id, ChatStatus.ONGOING),
         )
         result = cur.fetchone()
         if result is None:

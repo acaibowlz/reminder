@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from src.routine_bot.constants import ChatStatus
+
 
 @dataclass
 class UserData:
@@ -33,4 +35,4 @@ class ChatData:
     chat_type: str
     current_step: str | None
     payload: dict = field(default_factory=dict)
-    is_completed: bool = False
+    status: str = ChatStatus.ONGOING

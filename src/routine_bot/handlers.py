@@ -17,6 +17,7 @@ from routine_bot.constants import (
     LINE_CHANNEL_SECRET,
     SUPPORTED_COMMANDS,
     SUPPORTED_UNITS,
+    ChatStatus,
     ChatType,
     Command,
     CycleUnit,
@@ -173,7 +174,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
         elif msg.upper() == "N":
             chat.payload["reminder"] = False
             chat.current_step = None
-            chat.is_completed = True
+            chat.status = ChatStatus.COMPLETED
             logger.info("Added reminder=False to chat payload")
             update_chat(chat, conn)
             logger.info(f"Chat completed: {chat.chat_id}")
@@ -208,7 +209,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             offset = relativedelta(months=+increment)
         next_reminder = start_date + offset
         chat.current_step = None
-        chat.is_completed = True
+        chat.status = ChatStatus.COMPLETED
         logger.info(f"Added reminder cycle {chat.payload['reminder_cycle']} to chat payload")
         logger.info(f"Next reminder: {next_reminder.strftime('%Y-%m-%d')}")
         update_chat(chat, conn)
@@ -242,7 +243,7 @@ def handle_find_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -
         logger.info(f"Event name input: {event_name}")
         logger.info(f"Event found: {event_data.event_id}")
         chat.current_step = None
-        chat.is_completed = True
+        chat.status = ChatStatus.COMPLETED
         update_chat(chat, conn)
         logger.info(f"Chat completed: {chat.chat_id}")
         return FindEventMsg(event_data).show_event_info()

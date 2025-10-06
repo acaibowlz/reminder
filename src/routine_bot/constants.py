@@ -88,6 +88,12 @@ class ChatType:
     DELETE_EVENT = "delete_event"
 
 
+class ChatStatus:
+    ONGOING = "ongoing"
+    COMPLETED = "completed"
+    ABORTED = "aborted"
+
+
 class NewEventSteps:
     INPUT_NAME = "input_name"
     INPUT_START_DATE = "input_start_date"
