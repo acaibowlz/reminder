@@ -1,5 +1,3 @@
-from typing import Any
-
 from src.routine_bot.models import EventData
 
 DATE_EXAMPLE = "\n".join(

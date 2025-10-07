@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from src.routine_bot.constants import ChatStatus
+from src.routine_bot.enums import ChatStatus
 
 
 @dataclass

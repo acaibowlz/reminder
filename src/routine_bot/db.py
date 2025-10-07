@@ -3,7 +3,8 @@ import logging
 import psycopg
 from psycopg.types.json import Json
 
-from routine_bot.constants import DATABASE_URL, ChatStatus
+from routine_bot.constants import DATABASE_URL
+from routine_bot.enums import ChatStatus
 from routine_bot.models import ChatData, EventData
 
 logger = logging.getLogger(__name__)
