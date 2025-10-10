@@ -17,6 +17,16 @@ class UserData:
 
 
 @dataclass
+class ChatData:
+    chat_id: str
+    user_id: str
+    chat_type: str
+    current_step: str | None
+    payload: dict = field(default_factory=dict)
+    status: str = ChatStatus.ONGOING.value
+
+
+@dataclass
 class EventData:
     event_id: str
     event_name: str
@@ -29,10 +39,9 @@ class EventData:
 
 
 @dataclass
-class ChatData:
-    chat_id: str
+class UpdateData:
+    update_id: str
+    event_id: str
+    event_name: str
     user_id: str
-    chat_type: str
-    current_step: str | None
-    payload: dict = field(default_factory=dict)
-    status: str = ChatStatus.ONGOING
+    done_at: str

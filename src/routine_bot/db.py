@@ -1,11 +1,12 @@
 import logging
+from datetime import datetime
 
 import psycopg
 from psycopg.types.json import Json
 
 from routine_bot.constants import DATABASE_URL
 from routine_bot.enums import ChatStatus
-from routine_bot.models import ChatData, EventData
+from routine_bot.models import ChatData, EventData, UpdateData
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ def create_chats_table(cur: psycopg.Cursor) -> None:
         )
         """
     )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chats_user_status ON chats (user_id, status)")
 
 
 def create_events_table(cur: psycopg.Cursor) -> None:
@@ -139,7 +141,9 @@ def create_events_table(cur: psycopg.Cursor) -> None:
             reminder_cycle TEXT,
             next_reminder TIMESTAMPTZ,
             share_count INTEGER NOT NULL DEFAULT 0,
-            is_active BOOLEAN NOT NULL DEFAULT TRUE
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            -- Prevent duplicate event names per user
+            UNIQUE (user_id, event_name)
         )
         """
     )
@@ -258,8 +262,8 @@ def add_chat(chat: ChatData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO chats (chat_id, user_id, chat_type, current_step, payload)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO chats (chat_id, user_id, chat_type, current_step, payload, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 chat.chat_id,
@@ -267,6 +271,7 @@ def add_chat(chat: ChatData, conn: psycopg.Connection) -> None:
                 chat.chat_type,
                 chat.current_step,
                 Json(chat.payload),
+                ChatStatus.ONGOING.value,
             ),
         )
     conn.commit()
@@ -298,7 +303,7 @@ def get_ongoing_chat_id(user_id: str, conn: psycopg.Connection) -> str | None:
     with conn.cursor() as cur:
         cur.execute(
             "SELECT chat_id FROM chats WHERE user_id = %s AND status = %s",
-            (user_id, ChatStatus.ONGOING),
+            (user_id, ChatStatus.ONGOING.value),
         )
         result = cur.fetchone()
         if result is None:
@@ -306,7 +311,7 @@ def get_ongoing_chat_id(user_id: str, conn: psycopg.Connection) -> str | None:
         return result[0]
 
 
-def get_chat_data(chat_id: str, conn: psycopg.Connection) -> ChatData | None:
+def get_chat(chat_id: str, conn: psycopg.Connection) -> ChatData | None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -325,7 +330,7 @@ def get_chat_data(chat_id: str, conn: psycopg.Connection) -> ChatData | None:
 # -------------------------------- Event Table ------------------------------- #
 
 
-def add_event(event_data: EventData, conn: psycopg.Connection) -> None:
+def add_event(event: EventData, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -333,29 +338,36 @@ def add_event(event_data: EventData, conn: psycopg.Connection) -> None:
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                event_data.event_id,
-                event_data.event_name,
-                event_data.user_id,
-                event_data.last_done_at,
-                event_data.reminder,
-                event_data.reminder_cycle,
-                event_data.next_reminder,
+                event.event_id,
+                event.event_name,
+                event.user_id,
+                event.last_done_at,
+                event.reminder,
+                event.reminder_cycle,
+                event.next_reminder,
             ),
         )
     conn.commit()
-    logger.info(f"Event inserted: {event_data.event_id}")
+    logger.info(f"Event inserted: {event.event_id}")
 
 
 def get_event_id(user_id: str, event_name: str, conn: psycopg.Connection) -> str | None:
     with conn.cursor() as cur:
-        cur.execute("SELECT event_id FROM events WHERE user_id = %s AND event_name = %s", (user_id, event_name))
+        cur.execute(
+            """
+            SELECT event_id
+            FROM events
+            WHERE user_id = %s AND event_name = %s
+            """,
+            (user_id, event_name),
+        )
         result = cur.fetchone()
         if result is None:
             return None
         return result[0]
 
 
-def get_event_data(event_id: str, conn: psycopg.Connection) -> EventData | None:
+def get_event(event_id: str, conn: psycopg.Connection) -> EventData | None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -373,10 +385,54 @@ def get_event_data(event_id: str, conn: psycopg.Connection) -> EventData | None:
 
 def get_all_active_events_with_reminder(conn: psycopg.Connection) -> list[str]:
     with conn.cursor() as cur:
-        cur.execute("SELECT event_id FROM events WHERE is_active = true AND reminder = true")
+        cur.execute(
+            """
+            SELECT event_id
+            FROM events
+            WHERE is_active = true AND reminder = true
+            """
+        )
         result = cur.fetchall()
         return [row[0] for row in result]
 
 
 def update_event():
     pass
+
+
+# ------------------------------- Update Table ------------------------------- #
+
+
+def add_update(update: UpdateData, conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO updates (update_id, event_id, event_name, user_id, done_at)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                update.update_id,
+                update.event_id,
+                update.event_name,
+                update.user_id,
+                update.done_at,
+            ),
+        )
+    conn.commit()
+    logger.info(f"Update inserted: {update.update_id}")
+
+
+def get_event_recent_update_times(event_id: str, conn: psycopg.Connection, limit: int = 10) -> list[datetime]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT done_at
+            FROM updates
+            WHERE event_id = %s
+            ORDER BY done_at DESC
+            LIMIT %s
+            """,
+            (event_id, limit),
+        )
+        result = cur.fetchall()
+        return [row[0] for row in result]

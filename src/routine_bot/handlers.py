@@ -20,11 +20,13 @@ from routine_bot.constants import (
 from routine_bot.db import (
     add_chat,
     add_event,
+    add_update,
     add_user,
     conn,
-    get_chat_data,
-    get_event_data,
+    get_chat,
+    get_event,
     get_event_id,
+    get_event_recent_update_times,
     get_ongoing_chat_id,
     update_chat,
 )
@@ -39,7 +41,7 @@ from routine_bot.enums import (
     NewEventSteps,
 )
 from routine_bot.messages import AbortMsg, ErrorMsg, FindEventMsg, NewEventMsg
-from routine_bot.models import ChatData, EventData
+from routine_bot.models import ChatData, EventData, UpdateData
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +144,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
         chat.payload["event_name"] = event_name
         chat.current_step = NewEventSteps.INPUT_START_DATE
         update_chat(chat, conn)
-        logger.info(f"Added event name {event_name} to chat payload")
+        logger.info(f"Added to chat payload: event_name='{event_name}'")
         return NewEventMsg.prompt_for_start_date(chat.payload)
 
     elif chat.current_step == NewEventSteps.INPUT_START_DATE:
@@ -153,7 +155,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             return ErrorMsg.invalid_start_date_input()
         chat.payload["start_date"] = start_date.isoformat()  # datetime is not JSON serializable
         chat.current_step = NewEventSteps.INPUT_REMINDER
-        logger.info(f"Added start date {chat.payload['start_date'][:10]} to chat payload")
+        logger.info(f"Added to chat payload: start_date='{chat.payload['start_date']}'")
         update_chat(chat, conn)
         return NewEventMsg.prompt_for_reminder(chat.payload)
 
@@ -162,26 +164,35 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
         if msg.upper() == "Y":
             chat.payload["reminder"] = True
             chat.current_step = NewEventSteps.INPUT_REMINDER_CYCLE
-            logger.info("Added reminder=True to chat payload")
+            logger.info("Added to chat payload: reminder=True")
             update_chat(chat, conn)
             return NewEventMsg.prompt_for_reminder_cycle(chat.payload)
         elif msg.upper() == "N":
             chat.payload["reminder"] = False
             chat.current_step = None
-            chat.status = ChatStatus.COMPLETED
-            logger.info("Added reminder=False to chat payload")
+            chat.status = ChatStatus.COMPLETED.value
+            logger.info("Added to chat payload: reminder=False")
             update_chat(chat, conn)
             logger.info(f"Chat completed: {chat.chat_id}")
 
-            event_data = EventData(
-                event_id=str(uuid.uuid4()),
+            event_id = str(uuid.uuid4())
+            event = EventData(
+                event_id=event_id,
                 event_name=chat.payload["event_name"],
                 user_id=chat.user_id,
                 last_done_at=datetime.fromisoformat(chat.payload["start_date"]),
                 reminder=False,
             )
-            add_event(event_data, conn)
-            return NewEventMsg.completion_no_reminder(chat.payload)
+            add_event(event, conn)
+            update = UpdateData(
+                update_id=str(uuid.uuid4()),
+                event_id=event_id,
+                event_name=chat.payload["event_name"],
+                user_id=chat.user_id,
+                done_at=datetime.fromisoformat(chat.payload["start_date"]),
+            )
+            add_update(update, conn)
+            return NewEventMsg.event_created_no_reminder(chat.payload)
         else:
             logger.debug(f"Invalid reminder input: {msg}")
             return ErrorMsg.invalid_reminder_input()
@@ -203,14 +214,15 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             offset = relativedelta(months=+increment)
         next_reminder = start_date + offset
         chat.current_step = None
-        chat.status = ChatStatus.COMPLETED
-        logger.info(f"Added reminder cycle {chat.payload['reminder_cycle']} to chat payload")
+        chat.status = ChatStatus.COMPLETED.value
+        logger.info(f"Added to chat payload: reminder_cycle='{chat.payload['reminder_cycle']}'")
         logger.info(f"Next reminder: {next_reminder.strftime('%Y-%m-%d')}")
         update_chat(chat, conn)
         logger.info(f"Chat completed: {chat.chat_id}")
 
-        event_data = EventData(
-            event_id=str(uuid.uuid4()),
+        event_id = str(uuid.uuid4())
+        event = EventData(
+            event_id=event_id,
             event_name=chat.payload["event_name"],
             user_id=chat.user_id,
             last_done_at=datetime.fromisoformat(chat.payload["start_date"]),
@@ -218,8 +230,16 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             reminder_cycle=chat.payload["reminder_cycle"],
             next_reminder=next_reminder,
         )
-        add_event(event_data, conn)
-        return NewEventMsg.completion_with_reminder(chat.payload)
+        add_event(event, conn)
+        update = UpdateData(
+            update_id=str(uuid.uuid4()),
+            event_id=event_id,
+            event_name=chat.payload["event_name"],
+            user_id=chat.user_id,
+            done_at=datetime.fromisoformat(chat.payload["start_date"]),
+        )
+        add_update(update, conn)
+        return NewEventMsg.event_created_with_reminder(chat.payload)
 
 
 def handle_find_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
@@ -236,14 +256,15 @@ def handle_find_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -
             logger.info(f"Event name not found: {event_name}")
             return ErrorMsg.event_name_not_found(event_name)
 
-        event_data = get_event_data(event_id, conn)
         logger.info(f"Event name input: {event_name}")
-        logger.info(f"Event found: {event_data.event_id}")
+        logger.info(f"Event found: {event_id}")
+        event = get_event(event_id, conn)
+        recent_update_times = get_event_recent_update_times(event_id, conn)
         chat.current_step = None
-        chat.status = ChatStatus.COMPLETED
+        chat.status = ChatStatus.COMPLETED.value
         update_chat(chat, conn)
         logger.info(f"Chat completed: {chat.chat_id}")
-        return FindEventMsg.show_event_info(event_data)
+        return FindEventMsg.format_event_summary(event, recent_update_times)
 
 
 def create_new_chat(command: str, user_id: str, conn: psycopg.Connection) -> str:
@@ -291,13 +312,13 @@ def get_reply_message(msg: str, user_id: str) -> str:
                 return ErrorMsg.unrecognized_command()
             return create_new_chat(msg, user_id, conn)
 
-        chat = get_chat_data(ongoing_chat_id, conn)
+        chat = get_chat(ongoing_chat_id, conn)
         logger.debug(f"Ongoing chat found: {chat.chat_id}")
         logger.debug(f"Chat type: {chat.chat_type}")
         logger.debug(f"Current step: {chat.current_step}")
 
         if msg == Command.ABORT:
-            chat.status = ChatStatus.ABORTED
+            chat.status = ChatStatus.ABORTED.value
             update_chat(chat, conn)
             logger.info(f"Chat aborted: {chat.chat_id}")
             return AbortMsg.ongoing_chat_aborted()
