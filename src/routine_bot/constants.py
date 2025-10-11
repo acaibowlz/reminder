@@ -1,4 +1,5 @@
 import os
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -13,6 +14,9 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 REMINDER_TOKEN = os.getenv("REMINDER_TOKEN")
+
+TZ_TAIPEI = ZoneInfo("Asia/Taipei")
+FREE_PLAN_MAX_EVENTS = 5
 
 # ---------------------------------- Config ---------------------------------- #
 

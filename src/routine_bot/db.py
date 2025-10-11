@@ -1,11 +1,10 @@
 import logging
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.types.json import Json
 
-from routine_bot.constants import DATABASE_URL
+from routine_bot.constants import TZ_TAIPEI
 from routine_bot.enums import ChatStatus
 from routine_bot.models import ChatData, EventData, UpdateData, UserData
 
@@ -33,11 +32,17 @@ def create_users_table(cur: psycopg.Cursor) -> None:
         Timestamp of the most recent update from LINE's Get Profile API.
     - event_count :
         Total number of events owned by the user.
+        Users on free plan can have up to 5 events.
     - is_premium :
         Indicates whether the user is subscribed to a premium plan.
     - premium_until :
         Expiration timestamp of the user's premium feature access.
         Users can unsubscribe at any time, but premium access remains active until this timestamp.
+        Post-expiration behavior for users with > 5 events:
+        - Can view, update, edit, and delete all existing events
+        - Cannot create new events until event_count <= 5 or premium is renewed
+        - Will NOT receive notifications/reminders for any events while over the 5-event limit
+        (notifications resume once event_count <= 5 or premium is renewed)
     - is_active :
         Indicates whether the user has blocked the bot
     """
@@ -296,7 +301,7 @@ def update_user_profile(user_id: str, display_name: str, picture_url: str, conn:
                 profile_refreshed_at = %s
             WHERE user_id            = %s
             """,
-            (display_name, picture_url, datetime.now(tz=ZoneInfo("Asia/Taipei")), user_id),
+            (display_name, picture_url, datetime.now(tz=TZ_TAIPEI), user_id),
         )
     conn.commit()
     logger.info(f"User profile updated: {user_id}")

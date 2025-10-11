@@ -142,6 +142,18 @@ class ErrorMsg:
     def event_name_too_short() -> str:
         return "事件名稱不可以少於 2 字元🤣 請再試一次😌"
 
+    @staticmethod
+    def too_many_events() -> str:
+        return "\n".join(
+            (
+                "⚠️ 無法新增事件\n",
+                "🔒 你已超過免費方案的 5 個事件上限\n",
+                "💡 你可以選擇：",
+                "🗑️ 刪除一些舊事件後繼續使用免費方案",
+                "🚀 升級至 premium，享受新增無上限",
+            )
+        )
+
 
 class GreetingMsg:
     @staticmethod

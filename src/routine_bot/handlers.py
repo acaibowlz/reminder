@@ -3,7 +3,6 @@ import re
 import unicodedata
 import uuid
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import psycopg
 import requests
@@ -15,8 +14,10 @@ from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent, U
 import routine_bot.db as db
 from routine_bot.constants import (
     DATABASE_URL,
+    FREE_PLAN_MAX_EVENTS,
     LINE_CHANNEL_ACCESS_TOKEN,
     LINE_CHANNEL_SECRET,
+    TZ_TAIPEI,
 )
 from routine_bot.enums import (
     SUPPORTED_COMMANDS,
@@ -29,7 +30,7 @@ from routine_bot.enums import (
     NewEventSteps,
 )
 from routine_bot.messages import AbortMsg, ErrorMsg, FindEventMsg, NewEventMsg
-from routine_bot.models import ChatData, EventData, UpdateData
+from routine_bot.models import ChatData, EventData, UpdateData, UserData
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,6 @@ def validate_event_name(event_name: str) -> str | None:
 
 
 def parse_date(msg: str) -> datetime | None:
-    taipei = ZoneInfo("Asia/Taipei")
     if len(msg) == 2:
         datetime_mapping = {
             "今天": datetime.now(),
@@ -87,18 +87,18 @@ def parse_date(msg: str) -> datetime | None:
         if msg not in datetime_mapping:
             return None
         date = datetime_mapping[msg]
-        date = date.replace(tzinfo=taipei, hour=0, minute=0, second=0, microsecond=0)
+        date = date.replace(tzinfo=TZ_TAIPEI, hour=0, minute=0, second=0, microsecond=0)
     elif len(msg) == 4:
         try:
             msg = f"{datetime.now().year}{msg}"
             date = datetime.strptime(msg, "%Y%m%d")
-            date = date.replace(tzinfo=taipei)
+            date = date.replace(tzinfo=TZ_TAIPEI)
         except ValueError:
             return None
     elif len(msg) == 8:
         try:
             date = datetime.strptime(msg, "%Y%m%d")
-            date = date.replace(tzinfo=taipei)
+            date = date.replace(tzinfo=TZ_TAIPEI)
         except ValueError:
             return None
     else:
@@ -118,6 +118,10 @@ def parse_reminder_cycle(msg: str) -> tuple[int, str] | None:
     if unit not in SUPPORTED_UNITS:
         return None
     return value, unit
+
+
+def has_premium_access(user: UserData) -> None:
+    return user.premium_until and user.premium_until > datetime.now()
 
 
 # ------------------------------ Chat Handlers ------------------------------- #
@@ -266,6 +270,10 @@ def handle_find_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -
 def create_new_chat(command: str, user_id: str, conn: psycopg.Connection) -> str:
     chat_id = str(uuid.uuid4())
     if command == Command.NEW:
+        user = db.get_user(user_id, conn)
+        if user.event_count >= FREE_PLAN_MAX_EVENTS and not has_premium_access(user):
+            logger.info("Failed to create new event: reached max events allowed")
+            return ErrorMsg.too_many_events()
         logger.info("Creating new chat, chat type: new event")
         chat = ChatData(
             chat_id=chat_id,
