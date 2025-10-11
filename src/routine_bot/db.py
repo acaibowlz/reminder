@@ -11,8 +11,6 @@ from routine_bot.models import ChatData, EventData, UpdateData, UserData
 
 logger = logging.getLogger(__name__)
 
-conn = psycopg.connect(conninfo=DATABASE_URL)
-
 
 def table_exists(cur, table_name: str) -> bool:
     cur.execute("SELECT to_regclass(%s)", (f"public.{table_name}",))
@@ -272,13 +270,29 @@ def get_user(user_id: str, conn: psycopg.Connection) -> UserData | None:
         return UserData(*result)
 
 
+def is_user_exists(user_id: str, conn: psycopg.Connection) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT user_id, display_name, picture_url, profile_refreshed_at, event_count, is_premium, premium_until, is_active
+            FROM users
+            WHERE user_id = %s
+            """,
+            (user_id,),
+        )
+        result = cur.fetchone()
+        if result is None:
+            return False
+        return True
+
+
 def update_user_profile(user_id: str, display_name: str, picture_url: str, conn: psycopg.Connection):
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE users
             SET display_name         = %s,
-                picturl_url          = %s,
+                picture_url          = %s,
                 profile_refreshed_at = %s
             WHERE user_id            = %s
             """,
@@ -302,8 +316,28 @@ def update_user_event_count(user_id: str, delta: int, conn: psycopg.Connection):
     logger.info(f"User event count updated by {delta}")
 
 
-def toggle_user_activeness():
-    pass
+def toggle_user_activeness(user_id: str, conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT is_active
+            FROM users
+            WHERE user_id = %s
+            """,
+            (user_id,),
+        )
+        is_active = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            UPDATE users
+            SET is_active = %s
+            WHERE user_id = %s
+            """,
+            (not is_active, user_id),
+        )
+    conn.commit()
+    logger.info(f"User activeness updated: {user_id}")
 
 
 # -------------------------------- Chat Table -------------------------------- #
@@ -458,8 +492,9 @@ def get_all_active_events_with_reminder(conn: psycopg.Connection) -> list[str]:
             """
             SELECT event_id
             FROM events
-            WHERE is_active = true AND reminder = true
-            """
+            WHERE is_active = %s AND reminder = %s
+            """,
+            (True, True),
         )
         result = cur.fetchall()
         return [row[0] for row in result]
@@ -488,6 +523,30 @@ def update_event(event: EventData, conn: psycopg.Connection) -> None:
         )
     conn.commit()
     logger.info(f"Event updated: {event.event_id}")
+
+
+def toggle_event_activeness(event_id: str, conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT is_active
+            FROM events
+            WHERE event_id = %s
+            """,
+            (event_id,),
+        )
+        is_active = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            UPDATE events
+            SET is_active = %s
+            WHERE event_id = %s
+            """,
+            (not is_active, event_id),
+        )
+    conn.commit()
+    logger.info(f"Event activeness updated: {event_id}")
 
 
 # ------------------------------- Update Table ------------------------------- #

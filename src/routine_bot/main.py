@@ -51,3 +51,7 @@ async def run_reminder(request: Request):
     token = auth_header.split(" ")[1]
     if token != REMINDER_TOKEN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token")
+
+    # get all active events with reminder enabled
+    # with these events, gather receipients besides the owner
+    # push notification to owner and receipients
