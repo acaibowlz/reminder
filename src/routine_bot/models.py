@@ -13,7 +13,7 @@ class UserData:
     event_count: int
     is_premium: bool
     premium_until: datetime | None
-    is_blocked: bool
+    is_active: bool
 
 
 @dataclass

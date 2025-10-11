@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.types.json import Json
 
 from routine_bot.constants import DATABASE_URL
 from routine_bot.enums import ChatStatus
-from routine_bot.models import ChatData, EventData, UpdateData
+from routine_bot.models import ChatData, EventData, UpdateData, UserData
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ def create_users_table(cur: psycopg.Cursor) -> None:
     - premium_until :
         Expiration timestamp of the user's premium feature access.
         Users can unsubscribe at any time, but premium access remains active until this timestamp.
-    - is_blocked :
+    - is_active :
         Indicates whether the user has blocked the bot
     """
     cur.execute(
@@ -53,7 +54,7 @@ def create_users_table(cur: psycopg.Cursor) -> None:
             event_count INTEGER NOT NULL DEFAULT 0,
             is_premium BOOLEAN NOT NULL DEFAULT FALSE,
             premium_until TIMESTAMPTZ,
-            is_blocked BOOLEAN NOT NULL DEFAULT FALSE
+            is_active BOOLEAN NOT NULL DEFAULT FALSE
         )
         """
     )
@@ -255,6 +256,56 @@ def add_user(user_id: str, display_name: str, picture_url: str, conn: psycopg.Co
     logger.info(f"User inserted: {user_id}")
 
 
+def get_user(user_id: str, conn: psycopg.Connection) -> UserData | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT user_id, display_name, picture_url, profile_refreshed_at, event_count, is_premium, premium_until, is_active
+            FROM users
+            WHERE user_id = %s
+            """,
+            (user_id,),
+        )
+        result = cur.fetchone()
+        if result is None:
+            return None
+        return UserData(*result)
+
+
+def update_user_profile(user_id: str, display_name: str, picture_url: str, conn: psycopg.Connection):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET display_name         = %s,
+                picturl_url          = %s,
+                profile_refreshed_at = %s
+            WHERE user_id            = %s
+            """,
+            (display_name, picture_url, datetime.now(tz=ZoneInfo("Asia/Taipei")), user_id),
+        )
+    conn.commit()
+    logger.info(f"User profile updated: {user_id}")
+
+
+def update_user_event_count(user_id: str, delta: int, conn: psycopg.Connection):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET event_count = event_count + %s
+            WHERE user_id = %s
+            """,
+            (delta, user_id),
+        )
+    conn.commit()
+    logger.info(f"User event count updated by {delta}")
+
+
+def toggle_user_activeness():
+    pass
+
+
 # -------------------------------- Chat Table -------------------------------- #
 
 
@@ -302,7 +353,11 @@ def update_chat(chat: ChatData, conn: psycopg.Connection) -> None:
 def get_ongoing_chat_id(user_id: str, conn: psycopg.Connection) -> str | None:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT chat_id FROM chats WHERE user_id = %s AND status = %s",
+            """
+            SELECT chat_id
+            FROM chats
+            WHERE user_id = %s AND status = %s
+            """,
             (user_id, ChatStatus.ONGOING.value),
         )
         result = cur.fetchone()
@@ -383,6 +438,20 @@ def get_event(event_id: str, conn: psycopg.Connection) -> EventData | None:
         return EventData(*result)
 
 
+def get_all_events_by_user(user_id: str, conn: psycopg.Connection) -> list[str]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event_id
+            FROM events
+            WHERE user_id = %s
+            """,
+            (user_id,),
+        )
+        result = cur.fetchall()
+        return [row[0] for row in result]
+
+
 def get_all_active_events_with_reminder(conn: psycopg.Connection) -> list[str]:
     with conn.cursor() as cur:
         cur.execute(
@@ -396,8 +465,29 @@ def get_all_active_events_with_reminder(conn: psycopg.Connection) -> list[str]:
         return [row[0] for row in result]
 
 
-def update_event():
-    pass
+def update_event(event: EventData, conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE events
+            SET last_done_at   = %s,
+                reminder       = %s,
+                reminder_cycle = %s,
+                next_reminder  = %s,
+                share_count    = %s
+            WHERE event_id     = %s
+            """,
+            (
+                event.last_done_at,
+                event.reminder,
+                event.reminder_cycle,
+                event.next_reminder,
+                event.share_count,
+                event.event_id,
+            ),
+        )
+    conn.commit()
+    logger.info(f"Event updated: {event.event_id}")
 
 
 # ------------------------------- Update Table ------------------------------- #

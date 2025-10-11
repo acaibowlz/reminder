@@ -49,6 +49,9 @@ configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 
+# ------------------------------ Util Functions ------------------------------ #
+
+
 def sanitize_msg(msg: str) -> str:
     """
     Cleans and normalizes user input text for consistent downstream processing.
@@ -127,6 +130,9 @@ def parse_reminder_cycle(msg: str) -> tuple[int, str] | None:
     if unit not in SUPPORTED_UNITS:
         return None
     return value, unit
+
+
+# ------------------------------ Chat Handlers ------------------------------- #
 
 
 def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
@@ -324,6 +330,9 @@ def get_reply_message(msg: str, user_id: str) -> str:
             return AbortMsg.ongoing_chat_aborted()
 
         return handle_ongoing_chat(msg, chat, conn)
+
+
+# --------------------------- LINE Event Handlers ---------------------------- #
 
 
 @handler.add(FollowEvent)
