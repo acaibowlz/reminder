@@ -51,7 +51,7 @@ SUPPORTED_UNITS = {unit.value for unit in CycleUnit}
 class NewEventSteps(StrEnum):
     INPUT_NAME = auto()
     INPUT_START_DATE = auto()
-    INPUT_REMINDER = auto()
+    INPUT_TOGGLE_REMINDER = auto()
     INPUT_REMINDER_CYCLE = auto()
 
 

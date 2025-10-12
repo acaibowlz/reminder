@@ -8,8 +8,15 @@ import psycopg
 import requests
 from dateutil.relativedelta import relativedelta
 from linebot.v3 import WebhookHandler
-from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent, UnfollowEvent
+from linebot.v3.messaging import (
+    ApiClient,
+    Configuration,
+    Message,
+    MessagingApi,
+    ReplyMessageRequest,
+    TextMessage,
+)
+from linebot.v3.webhooks import FollowEvent, MessageEvent, PostbackEvent, TextMessageContent, UnfollowEvent
 
 import routine_bot.db as db
 from routine_bot.constants import (
@@ -29,7 +36,7 @@ from routine_bot.enums import (
     FindEventSteps,
     NewEventSteps,
 )
-from routine_bot.messages import AbortMsg, ErrorMsg, FindEventMsg, NewEventMsg
+from routine_bot.messages import AbortMsg, ErrorMsg, FindEventMsg, GreetingMsg, NewEventMsg
 from routine_bot.models import ChatData, EventData, UpdateData, UserData
 
 logger = logging.getLogger(__name__)
@@ -77,35 +84,6 @@ def validate_event_name(event_name: str) -> str | None:
     return None
 
 
-def parse_date(msg: str) -> datetime | None:
-    if len(msg) == 2:
-        datetime_mapping = {
-            "今天": datetime.now(),
-            "明天": datetime.now() + timedelta(days=1),
-            "昨天": datetime.now() - timedelta(days=1),
-        }
-        if msg not in datetime_mapping:
-            return None
-        date = datetime_mapping[msg]
-        date = date.replace(tzinfo=TZ_TAIPEI, hour=0, minute=0, second=0, microsecond=0)
-    elif len(msg) == 4:
-        try:
-            msg = f"{datetime.now().year}{msg}"
-            date = datetime.strptime(msg, "%Y%m%d")
-            date = date.replace(tzinfo=TZ_TAIPEI)
-        except ValueError:
-            return None
-    elif len(msg) == 8:
-        try:
-            date = datetime.strptime(msg, "%Y%m%d")
-            date = date.replace(tzinfo=TZ_TAIPEI)
-        except ValueError:
-            return None
-    else:
-        return None
-    return date
-
-
 def parse_reminder_cycle(msg: str) -> tuple[int, str] | None:
     try:
         value, unit = msg.split(" ", maxsplit=1)
@@ -127,45 +105,40 @@ def has_premium_access(user: UserData) -> None:
 # ------------------------------ Chat Handlers ------------------------------- #
 
 
-def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
+def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> Message:
     if chat.current_step == NewEventSteps.INPUT_NAME:
-        logger.info("Processing event name input")
+        logger.debug("Processing event name input")
         event_name = msg
         # validate event name
         error_msg = validate_event_name(event_name)
         if error_msg is not None:
-            logger.info(f"Invalid event name input: {event_name}")
-            return error_msg
+            logger.debug(f"Invalid event name input: {event_name}")
+            return TextMessage(text=error_msg)
         if db.get_event_id(chat.user_id, event_name, conn) is not None:
+            logger.debug(f"Duplicated event name input: {event_name}")
             return ErrorMsg.event_name_duplicated(event_name)
         # store event name in state data
         chat.payload["event_name"] = event_name
+        chat.payload["chat_id"] = chat.chat_id
         chat.current_step = NewEventSteps.INPUT_START_DATE
         db.update_chat(chat, conn)
         logger.info(f"Added to chat payload: event_name='{event_name}'")
+        logger.info(f"Added to chat payload: chat_id='{chat.chat_id}'")
         return NewEventMsg.prompt_for_start_date(chat.payload)
 
     elif chat.current_step == NewEventSteps.INPUT_START_DATE:
-        logger.info("Processing start date input")
-        start_date = parse_date(msg)
-        if start_date is None:
-            logger.info(f"Invalid start date input: {msg}")
-            return ErrorMsg.invalid_start_date_input()
-        chat.payload["start_date"] = start_date.isoformat()  # datetime is not JSON serializable
-        chat.current_step = NewEventSteps.INPUT_REMINDER
-        logger.info(f"Added to chat payload: start_date='{chat.payload['start_date']}'")
-        db.update_chat(chat, conn)
-        return NewEventMsg.prompt_for_reminder(chat.payload)
+        logger.debug("Text input is not expected at current step")
+        return NewEventMsg.invalid_input_for_start_date(chat.payload)
 
-    elif chat.current_step == NewEventSteps.INPUT_REMINDER:
-        logger.info("Processing reminder input")
-        if msg.upper() == "Y":
+    elif chat.current_step == NewEventSteps.INPUT_TOGGLE_REMINDER:
+        logger.info("Processing toggle reminder input")
+        if msg == "設定提醒":
             chat.payload["reminder"] = True
             chat.current_step = NewEventSteps.INPUT_REMINDER_CYCLE
             logger.info("Added to chat payload: reminder=True")
             db.update_chat(chat, conn)
             return NewEventMsg.prompt_for_reminder_cycle(chat.payload)
-        elif msg.upper() == "N":
+        elif msg == "不設定提醒":
             chat.payload["reminder"] = False
             chat.current_step = None
             chat.status = ChatStatus.COMPLETED.value
@@ -194,13 +167,16 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
             return NewEventMsg.event_created_no_reminder(chat.payload)
         else:
             logger.debug(f"Invalid reminder input: {msg}")
-            return ErrorMsg.invalid_reminder_input()
+            return NewEventMsg.invalid_input_for_toggle_reminder(chat.payload)
 
     elif chat.current_step == NewEventSteps.INPUT_REMINDER_CYCLE:
         logger.info("Processing reminder cycle input")
+        if msg.lower() == "example":
+            logger.info("Return reminder cycle example")
+            return NewEventMsg.reminder_cycle_example()
         if parse_reminder_cycle(msg) is None:
-            logger.debug(f"Invalid reminder cycle input: {msg}")
-            return ErrorMsg.invalid_reminder_cycle()
+            logger.info(f"Invalid reminder cycle input: {msg}")
+            return NewEventMsg.invalid_input_for_reminder_cycle(chat.payload)
         chat.payload["reminder_cycle"] = msg
         increment, unit = parse_reminder_cycle(msg)
         start_date = datetime.fromisoformat(chat.payload["start_date"])
@@ -242,7 +218,7 @@ def handle_new_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) ->
         return NewEventMsg.event_created_with_reminder(chat.payload)
 
 
-def handle_find_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> str:
+def handle_find_event_chat(msg: str, chat: ChatData, conn: psycopg.Connection):
     if chat.current_step == FindEventSteps.INPUT_NAME:
         logger.info("Processing event name input")
         event_name = msg
@@ -273,7 +249,7 @@ def create_new_chat(command: str, user_id: str, conn: psycopg.Connection) -> str
         user = db.get_user(user_id, conn)
         if user.event_count >= FREE_PLAN_MAX_EVENTS and not has_premium_access(user):
             logger.info("Failed to create new event: reached max events allowed")
-            return ErrorMsg.too_many_events()
+            return ErrorMsg.max_events_reached()
         logger.info("Creating new chat, chat type: new event")
         chat = ChatData(
             chat_id=chat_id,
@@ -302,7 +278,7 @@ def handle_ongoing_chat(msg: str, chat: ChatData, conn: psycopg.Connection) -> s
         return handle_find_event_chat(msg, chat, conn)
 
 
-def get_reply_message(msg: str, user_id: str) -> str:
+def get_reply_message_from_text(msg: str, user_id: str) -> Message:
     logger.debug(f"Message received: {msg}")
     with psycopg.connect(conninfo=DATABASE_URL) as conn:
         ongoing_chat_id = db.get_ongoing_chat_id(user_id, conn)
@@ -311,7 +287,7 @@ def get_reply_message(msg: str, user_id: str) -> str:
             if msg == Command.ABORT:
                 return AbortMsg.no_ongoing_chat()
             if not msg.startswith("/"):
-                return "hello!"
+                return GreetingMsg.random()
             if msg not in SUPPORTED_COMMANDS:
                 return ErrorMsg.unrecognized_command()
             return create_new_chat(msg, user_id, conn)
@@ -378,12 +354,35 @@ def handle_user_blocked(event: UnfollowEvent) -> None:
                 db.toggle_event_activeness(event_id, conn)
 
 
+@handler.add(PostbackEvent)
+def handle_postback(event: PostbackEvent):
+    logger.info(f"Postback data: {event.postback.data}")
+    logger.info(f"Postback params: {event.postback.params}")
+    chat_id = event.postback.data
+    with psycopg.connect(conninfo=DATABASE_URL) as conn:
+        chat = db.get_chat(chat_id, conn)
+        # only proceed if status and current step matches
+        if chat.chat_type == ChatType.NEW_EVENT and chat.current_step == NewEventSteps.INPUT_START_DATE:
+            logger.info("Processing start date input")
+            start_date = datetime.strptime(event.postback.params["date"], "%Y-%m-%d")
+            start_date = start_date.replace(tzinfo=TZ_TAIPEI)
+            chat.payload["start_date"] = start_date.isoformat()  # datetime is not JSON serializable
+            chat.current_step = NewEventSteps.INPUT_TOGGLE_REMINDER
+            logger.info(f"Added to chat payload: start_date='{chat.payload['start_date']}'")
+            db.update_chat(chat, conn)
+            reply_message = NewEventMsg.prompt_for_toggle_reminder(chat.payload)
+        else:
+            return None
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[reply_message]))
+
+
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event: MessageEvent) -> None:
     msg = sanitize_msg(event.message.text)
-    reply_message = get_reply_message(msg=msg, user_id=event.source.user_id)
+    reply_message = get_reply_message_from_text(msg=msg, user_id=event.source.user_id)
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply_message)])
-        )
+        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[reply_message]))
