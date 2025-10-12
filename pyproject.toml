@@ -1,6 +1,5 @@
 [project]
 name = "routine-bot"
-version = "0.1.0"
 description = "Routine-tracking LINE bot"
 readme = "README.md"
 requires-python = ">=3.13"
