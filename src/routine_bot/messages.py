@@ -175,7 +175,7 @@ class FindEventMsg:
 
     @staticmethod
     def format_event_summary(event: EventData, recent_update_times: list[datetime]) -> FlexMessage:
-        contents = [flex_text_bold_line(f"🎯 {event.event_name}"), FlexSeparator()]
+        contents = [flex_text_bold_line(f"🎯［{event.event_name}］的事件摘要"), FlexSeparator()]
         # the use of contents.extend will unfold the list to be extended
         # which does not look good
         if event.reminder:
@@ -200,7 +200,7 @@ class FindEventMsg:
                 contents=contents,
             ),
         )
-        msg = FlexMessage(altText=f"🎯 ［{event.event_name}］的事件摘要", contents=bubble)
+        msg = FlexMessage(altText=f"🎯［{event.event_name}］的事件摘要", contents=bubble)
         return msg
 
 

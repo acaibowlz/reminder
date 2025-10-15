@@ -6,7 +6,7 @@ from psycopg.types.json import Json
 
 from routine_bot.constants import TZ_TAIPEI
 from routine_bot.enums import ChatStatus
-from routine_bot.models import ChatData, EventData, UpdateData, UserData
+from routine_bot.models import ChatData, EventData, ShareData, UpdateData, UserData
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,8 @@ def create_users_table(cur: psycopg.Cursor) -> None:
         URL of the user's profile picture, retrieved from LINE's Get Profile API.
     - profile_refreshed_at :
         Timestamp of the most recent update from LINE's Get Profile API.
+    - notification_time :
+        Daily time-of-day (without date) when the user prefers to receive notifications.
     - event_count :
         Total number of events owned by the user.
         Users on free plan can have up to 5 events.
@@ -54,6 +56,7 @@ def create_users_table(cur: psycopg.Cursor) -> None:
             display_name TEXT NOT NULL,
             picture_url TEXT NOT NULL,
             profile_refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            notification_time TIME NOT NULL DEFAULT '00:00',
             event_count INTEGER NOT NULL DEFAULT 0,
             is_premium BOOLEAN NOT NULL DEFAULT FALSE,
             premium_until TIMESTAMPTZ,
@@ -125,6 +128,8 @@ def create_events_table(cur: psycopg.Cursor) -> None:
     - next_reminder :
         If the current time is later than this timestamp, the reminder is considered due,
         and the bot will send the reminder on its next scheduled run.
+    - last_notification_sent_at:
+        Timestamp indicating when the last reminder notification is sent.
     - share_count :
         The number of users this event is shared with.
         All shared users will also receive reminder notifications.
@@ -144,6 +149,7 @@ def create_events_table(cur: psycopg.Cursor) -> None:
             reminder BOOLEAN NOT NULL,
             reminder_cycle TEXT,
             next_reminder TIMESTAMPTZ,
+            last_notification_sent_at TIMESTAMPTZ,
             share_count INTEGER NOT NULL DEFAULT 0,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             -- Prevent duplicate event names per user
@@ -246,14 +252,9 @@ def add_user(user_id: str, display_name: str, picture_url: str, conn: psycopg.Co
         cur.execute(
             """
             INSERT INTO users (user_id, display_name, picture_url, premium_until)
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s, %s, NULL)
             """,
-            (
-                user_id,
-                display_name,
-                picture_url,
-                None,
-            ),
+            (user_id, display_name, picture_url),
         )
     conn.commit()
     logger.info(f"User inserted: {user_id}")
@@ -263,7 +264,7 @@ def get_user(user_id: str, conn: psycopg.Connection) -> UserData | None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT user_id, display_name, picture_url, profile_refreshed_at, event_count, is_premium, premium_until, is_active
+            SELECT user_id, display_name, picture_url, profile_refreshed_at, notification_time, event_count, is_premium, premium_until, is_active
             FROM users
             WHERE user_id = %s
             """,
@@ -279,27 +280,25 @@ def is_user_exists(user_id: str, conn: psycopg.Connection) -> bool:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT user_id, display_name, picture_url, profile_refreshed_at, event_count, is_premium, premium_until, is_active
+            SELECT 1
             FROM users
             WHERE user_id = %s
+            LIMIT 1
             """,
             (user_id,),
         )
-        result = cur.fetchone()
-        if result is None:
-            return False
-        return True
+        return cur.fetchone() is not None
 
 
-def update_user_profile(user_id: str, display_name: str, picture_url: str, conn: psycopg.Connection):
+def set_user_profile(user_id: str, display_name: str, picture_url: str, conn: psycopg.Connection):
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE users
-            SET display_name         = %s,
-                picture_url          = %s,
+            SET display_name = %s,
+                picture_url = %s,
                 profile_refreshed_at = %s
-            WHERE user_id            = %s
+            WHERE user_id = %s
             """,
             (display_name, picture_url, datetime.now(tz=TZ_TAIPEI), user_id),
         )
@@ -307,7 +306,7 @@ def update_user_profile(user_id: str, display_name: str, picture_url: str, conn:
     logger.info(f"User profile updated: {user_id}")
 
 
-def update_user_event_count(user_id: str, delta: int, conn: psycopg.Connection):
+def increment_user_event_count(user_id: str, by: int, conn: psycopg.Connection):
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -315,31 +314,21 @@ def update_user_event_count(user_id: str, delta: int, conn: psycopg.Connection):
             SET event_count = event_count + %s
             WHERE user_id = %s
             """,
-            (delta, user_id),
+            (by, user_id),
         )
     conn.commit()
-    logger.info(f"User event count updated by {delta}")
+    logger.info(f"User event count updated by {by}")
 
 
-def toggle_user_activeness(user_id: str, conn: psycopg.Connection) -> None:
+def set_user_activeness(user_id: str, to: bool, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT is_active
-            FROM users
-            WHERE user_id = %s
-            """,
-            (user_id,),
-        )
-        is_active = cur.fetchone()[0]
-
         cur.execute(
             """
             UPDATE users
             SET is_active = %s
             WHERE user_id = %s
             """,
-            (not is_active, user_id),
+            (to, user_id),
         )
     conn.commit()
     logger.info(f"User activeness updated: {user_id}")
@@ -368,25 +357,20 @@ def add_chat(chat: ChatData, conn: psycopg.Connection) -> None:
     logger.info(f"Chat inserted: {chat.chat_id}")
 
 
-def update_chat(chat: ChatData, conn: psycopg.Connection) -> None:
+def get_chat(chat_id: str, conn: psycopg.Connection) -> ChatData | None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            UPDATE chats
-            SET current_step = %s,
-                payload      = %s,
-                status       = %s
-            WHERE chat_id    = %s
+            SELECT chat_id, user_id, chat_type, current_step, payload, status
+            FROM chats
+            WHERE chat_id = %s
             """,
-            (
-                chat.current_step,
-                Json(chat.payload),
-                chat.status,
-                chat.chat_id,
-            ),
+            (chat_id,),
         )
-    conn.commit()
-    logger.info(f"Chat updated: {chat.chat_id}")
+        result = cur.fetchone()
+        if result is None:
+            return None
+        return ChatData(*result)
 
 
 def get_ongoing_chat_id(user_id: str, conn: psycopg.Connection) -> str | None:
@@ -405,20 +389,46 @@ def get_ongoing_chat_id(user_id: str, conn: psycopg.Connection) -> str | None:
         return result[0]
 
 
-def get_chat(chat_id: str, conn: psycopg.Connection) -> ChatData | None:
+def set_chat_current_step(chat_id: str, current_step: str | None, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT chat_id, user_id, chat_type, current_step, payload, status
-            FROM chats
+            UPDATE chats
+            SET current_step = %s
             WHERE chat_id = %s
             """,
-            (chat_id,),
+            (current_step, chat_id),
         )
-        result = cur.fetchone()
-        if result is None:
-            return None
-        return ChatData(*result)
+    conn.commit()
+    logger.info(f"Chat current_step updated: {chat_id}")
+
+
+def set_chat_payload(chat_id: str, payload: dict, conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE chats
+            SET payload = %s
+            WHERE chat_id = %s
+            """,
+            (Json(payload), chat_id),
+        )
+    conn.commit()
+    logger.info(f"Chat payload updated: {chat_id}")
+
+
+def set_chat_status(chat_id: str, status: str, conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE chats
+            SET status = %s
+            WHERE chat_id = %s
+            """,
+            (status, chat_id),
+        )
+    conn.commit()
+    logger.info(f"Chat status updated: {chat_id}")
 
 
 # -------------------------------- Event Table ------------------------------- #
@@ -445,6 +455,22 @@ def add_event(event: EventData, conn: psycopg.Connection) -> None:
     logger.info(f"Event inserted: {event.event_id}")
 
 
+def get_event(event_id: str, conn: psycopg.Connection) -> EventData | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event_id, event_name, user_id, last_done_at, reminder, reminder_cycle, next_reminder, last_notification_sent_at, share_count
+            FROM events
+            WHERE event_id = %s
+            """,
+            (event_id,),
+        )
+        result = cur.fetchone()
+        if result is None:
+            return None
+        return EventData(*result)
+
+
 def get_event_id(user_id: str, event_name: str, conn: psycopg.Connection) -> str | None:
     with conn.cursor() as cur:
         cur.execute(
@@ -461,94 +487,44 @@ def get_event_id(user_id: str, event_name: str, conn: psycopg.Connection) -> str
         return result[0]
 
 
-def get_event(event_id: str, conn: psycopg.Connection) -> EventData | None:
+# def get_all_events_by_user(user_id: str, conn: psycopg.Connection) -> list[str]:
+#     with conn.cursor() as cur:
+#         cur.execute(
+#             """
+#             SELECT event_id
+#             FROM events
+#             WHERE user_id = %s
+#             """,
+#             (user_id,),
+#         )
+#         result = cur.fetchall()
+#         return [row[0] for row in result]
+
+
+# def get_events_with_due_reminders(conn: psycopg.Connection) -> list[str]:
+#     with conn.cursor() as cur:
+#         cur.execute(
+#             """
+#             SELECT event_id
+#             FROM events
+#             WHERE is_active = TRUE
+#               AND reminder = TRUE
+#               AND next_reminder <= NOW()
+#             """,
+#         )
+#         result = cur.fetchall()
+#         return [EventData(*row) for row in result]
+
+
+def set_event_activeness(event_id: str, to: bool, conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT event_id, event_name, user_id, last_done_at, reminder, reminder_cycle, next_reminder, share_count
-            FROM events
-            WHERE event_id = %s
-            """,
-            (event_id,),
-        )
-        result = cur.fetchone()
-        if result is None:
-            return None
-        return EventData(*result)
-
-
-def get_all_events_by_user(user_id: str, conn: psycopg.Connection) -> list[str]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT event_id
-            FROM events
-            WHERE user_id = %s
-            """,
-            (user_id,),
-        )
-        result = cur.fetchall()
-        return [row[0] for row in result]
-
-
-def get_all_active_events_with_reminder(conn: psycopg.Connection) -> list[str]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT event_id
-            FROM events
-            WHERE is_active = %s AND reminder = %s
-            """,
-            (True, True),
-        )
-        result = cur.fetchall()
-        return [row[0] for row in result]
-
-
-def update_event(event: EventData, conn: psycopg.Connection) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE events
-            SET last_done_at   = %s,
-                reminder       = %s,
-                reminder_cycle = %s,
-                next_reminder  = %s,
-                share_count    = %s
-            WHERE event_id     = %s
-            """,
-            (
-                event.last_done_at,
-                event.reminder,
-                event.reminder_cycle,
-                event.next_reminder,
-                event.share_count,
-                event.event_id,
-            ),
-        )
-    conn.commit()
-    logger.info(f"Event updated: {event.event_id}")
-
-
-def toggle_event_activeness(event_id: str, conn: psycopg.Connection) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT is_active
-            FROM events
-            WHERE event_id = %s
-            """,
-            (event_id,),
-        )
-        is_active = cur.fetchone()[0]
-
         cur.execute(
             """
             UPDATE events
             SET is_active = %s
             WHERE event_id = %s
             """,
-            (not is_active, event_id),
+            (to, event_id),
         )
     conn.commit()
     logger.info(f"Event activeness updated: {event_id}")
@@ -590,3 +566,25 @@ def get_event_recent_update_times(event_id: str, conn: psycopg.Connection, limit
         )
         result = cur.fetchall()
         return [row[0] for row in result]
+
+
+# ------------------------------- Share Table -------------------------------- #
+
+
+def add_share(share: ShareData, conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO shares (share_id, event_id, event_name, owner_id, recipient_id)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                share.share_id,
+                share.event_id,
+                share.event_name,
+                share.owner_id,
+                share.recipient_id,
+            ),
+        )
+    conn.commit()
+    logger.info(f"Share inserted: {share.share_id}")
